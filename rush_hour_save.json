@@ -3,30 +3,30 @@
     "0": {
       "best_time": 3.1284197000000002,
       "best_moves": 2,
-      "last_time": 7.9559261999999995,
-      "last_moves": 2,
-      "last_stars": 3
+      "last_time": 51.858805100000005,
+      "last_moves": 3,
+      "last_stars": 2
     },
     "1": {
       "best_time": 4.1842443,
       "best_moves": 3,
-      "last_time": 4.4313576,
-      "last_moves": 3,
-      "last_stars": 3
+      "last_time": 14.037067999999998,
+      "last_moves": 5,
+      "last_stars": 2
     },
     "2": {
       "best_time": 4.079968000000003,
       "best_moves": 3,
-      "last_time": 41.1621809,
-      "last_moves": 9,
+      "last_time": 11.145142999999997,
+      "last_moves": 5,
       "last_stars": 3
     },
     "3": {
       "best_time": 1.2868441999999973,
       "best_moves": 1,
-      "last_time": 4.068982299999998,
-      "last_moves": 1,
-      "last_stars": 3
+      "last_time": 48.64232129999999,
+      "last_moves": 14,
+      "last_stars": 2
     }
   },
   "achievements": {
@@ -41,10 +41,10 @@
     }
   },
   "stats": {
-    "rotation_units": 25,
-    "rotations": 25,
-    "snapshots": 7,
-    "hints_used_total": 14,
+    "rotation_units": 28,
+    "rotations": 28,
+    "snapshots": 8,
+    "hints_used_total": 17,
     "levels_cleared": {
       "0": {
         "cleared": true,
@@ -67,5 +67,8 @@
         "cleared_optimal": true
       }
     }
+  },
+  "tutorial": {
+    "level1_done": true
   }
 }

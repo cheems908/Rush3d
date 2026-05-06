@@ -162,13 +162,22 @@ class RushHourUrsina:
             pass
 
         self.dev_overlay_enabled = False
+        try:
+            for attr in ('exit_button', 'fps_counter', 'entity_counter', 'collider_counter', 'cog_button'):
+                widget = getattr(window, attr, None)
+                if widget is not None:
+                    widget.enabled = False
+                    if hasattr(widget, 'visible'):
+                        widget.visible = False
+        except Exception:
+            pass
 
-        self.top_panel = self._glass_panel(scale=(0.92, 0.12), position=(0, 0.42))
-        self.bottom_panel = self._glass_panel(scale=(0.92, 0.26), position=(0, -0.41))
-        self.top_ui = Entity(parent=camera.ui, position=(0, 0.42))
-        self.bottom_ui = Entity(parent=camera.ui, position=(0, -0.40))
+        self.top_panel = self._glass_panel(scale=(0.40, 0.34), position=(0.67, 0.30))
+        self.bottom_panel = self._glass_panel(scale=(0.24, 0.82), position=(-0.74, 0.00))
+        self.top_ui = Entity(parent=camera.ui, position=(0.67, 0.30))
+        self.bottom_ui = Entity(parent=camera.ui, position=(-0.74, 0.00))
 
-        self.title_text = Text("Rush Hour", parent=self.top_ui, origin=(-0.5, 0), x=-0.43, y=0.022, scale=1.25, color=color.rgba(0.46, 0.38, 0.22, 1))
+        self.title_text = Text("Rush Hour", parent=self.top_ui, origin=(-0.5, 0), x=-0.17, y=0.10, scale=1.20, color=color.rgba(0.46, 0.38, 0.22, 1))
 
         AmbientLight(color=color.rgba(0.35, 0.35, 0.4, 1))
         DirectionalLight(direction=Vec3(1, -2, 1), color=color.rgba(0.9, 0.9, 0.9, 1))
@@ -207,18 +216,16 @@ class RushHourUrsina:
         self._save_data = self._load_save()
         self._save_data.setdefault('achievements', {})
         self._save_data.setdefault('stats', {})
+        self._save_data.setdefault('tutorial', {})
         self._save_data['stats'].setdefault('rotation_units', 0)
         self._save_data['stats'].setdefault('rotations', 0)
         self._save_data['stats'].setdefault('snapshots', 0)
         self._save_data['stats'].setdefault('hints_used_total', 0)
         self._save_data['stats'].setdefault('levels_cleared', {})
 
-        self.level_text = Text("", parent=self.top_ui, origin=(-0.5, 0), x=-0.43, y=-0.022, scale=0.95, color=self.ui_text)
-        self.metrics = Text("", parent=self.top_ui, origin=(0.5, 0), x=0.43, y=-0.022, scale=0.82, color=self.ui_muted)
-        self.metrics.enabled = False
-
-        self.status = Text("Ready", parent=self.bottom_ui, origin=(-0.5, 0), x=-0.43, y=0.120, scale=0.88, color=self.ui_text)
-        self.help = Text("V: Toggle 2D/3D  |  P: Screenshot  |  Drag: Move vehicle  |  Drag bg: Rotate  |  Wheel: Zoom  |  R-click: Rotate", parent=self.bottom_ui, origin=(0, 0), y=-0.122, scale=0.78, color=self.ui_text)
+        self.level_text = Text("", parent=self.top_ui, origin=(-0.5, 0), x=-0.17, y=0.055, scale=0.68, color=self.ui_text)
+        self.status = Text("Ready", parent=self.top_ui, origin=(-0.5, 0), x=-0.17, y=-0.06, scale=0.62, color=self.ui_text)
+        self.help = Text("Controls:\nDrag car to move\nDrag empty space to rotate\nWheel: zoom\nV: switch view\nP: save screenshot", parent=self.top_ui, origin=(-0.5, 0), x=-0.17, y=-0.13, scale=0.48, color=self.ui_muted)
 
         self.floor_tiles = []
         self.tile_by_cell = {}
@@ -258,6 +265,28 @@ class RushHourUrsina:
         self.drag_start_pos = None
         self.drag_preview_pos = None
         self.drag_mouse_start = Vec2(0, 0)
+
+        self._tutorial_active = False
+        self._tutorial_step = 0
+        self._tutorial_step_done = False
+        self._tutorial_step_started_at = 0.0
+        self._tutorial_rotate_ref = 0.0
+        self._tutorial_target_vehicle_idx = None
+        self._tutorial_move_target_pos = None
+        self._tutorial_vehicle_highlight = None
+        self._tutorial_road_overlays = []
+        self._tutorial_dest_overlays = []
+        self._tutorial_ui_highlights = []
+        self._tutorial_panel = None
+        self._tutorial_panel_shadow = None
+        self._tutorial_panel_border = None
+        self._tutorial_ui = None
+        self._tutorial_title = None
+        self._tutorial_body = None
+        self._tutorial_btn_next = None
+        self._tutorial_btn_skip = None
+        self._tutorial_layout = 'intro'
+        self._tutorial_shown_this_session = False
 
         self._build_ui_buttons()
         self.load_level(0)
@@ -330,11 +359,6 @@ class RushHourUrsina:
     def _glass_panel(self, scale, position):
         radius = 0.18
 
-        shadow = Button(parent=camera.ui, text='', scale=(scale[0] + 0.012, scale[1] + 0.012), position=(position[0] + 0.007, position[1] - 0.007), color=self.ui_shadow, radius=radius)
-        shadow.shader = unlit_shader
-        shadow.collider = None
-        shadow.z = 0.02
-
         border = Button(parent=camera.ui, text='', scale=(scale[0] + 0.003, scale[1] + 0.003), position=position, color=self.ui_border, radius=radius)
         border.shader = unlit_shader
         border.collider = None
@@ -345,33 +369,55 @@ class RushHourUrsina:
         panel.collider = None
         panel.z = 0.0
 
-        panel._shadow = shadow
         panel._border = border
         return panel
+
+    def _set_button_label(self, button, text, scale=0.50, z=-0.12):
+        label = getattr(button, '_label_entity', None)
+        if label is None:
+            label = Text(
+                text=text,
+                parent=button.parent,
+                origin=(0, 0),
+                position=(button.x, button.y, z),
+                scale=scale,
+                color=getattr(button, 'text_color', color.black),
+            )
+            button._label_entity = label
+        else:
+            label.text = text
+            label.parent = button.parent
+            label.position = (button.x, button.y, z)
+            label.scale = scale
+            label.color = getattr(button, 'text_color', color.black)
+        button.text = ''
+        return label
 
     def _show_toast(self, title, subtitle=None, duration=2.2):
         if self._toast_panel is not None:
             try:
                 destroy(self._toast_panel.get('bg'))
+                destroy(self._toast_panel.get('border'))
                 destroy(self._toast_panel.get('ui'))
             except Exception:
                 pass
             self._toast_panel = None
         self._toast_until = pytime.perf_counter() + float(duration)
         bg = self._glass_panel(scale=(0.62, 0.16), position=(0, 0.30))
+        border = getattr(bg, '_border', None)
         ui = Entity(parent=camera.ui, position=(0, 0.30))
         bg.color = color.rgba(self.ui_bg.r, self.ui_bg.g, self.ui_bg.b, 0)
-        if hasattr(bg, '_shadow'):
-            bg._shadow.color = color.rgba(self.ui_shadow.r, self.ui_shadow.g, self.ui_shadow.b, 0)
+        if border is not None:
+            border.color = color.rgba(self.ui_border.r, self.ui_border.g, self.ui_border.b, 0)
         bg.animate_color(self.ui_bg, duration=0.22, curve=curve.out_quad)
-        if hasattr(bg, '_shadow'):
-            bg._shadow.animate_color(self.ui_shadow, duration=0.22, curve=curve.out_quad)
+        if border is not None:
+            border.animate_color(self.ui_border, duration=0.22, curve=curve.out_quad)
 
         Text(title, parent=ui, origin=(0, 0), scale=1.15, y=0.03, color=color.rgba(1, 0.88, 0.45, 1))
         if subtitle:
             Text(subtitle, parent=ui, origin=(0, 0), scale=0.85, y=-0.04, color=self.ui_text)
 
-        self._toast_panel = {'bg': bg, 'ui': ui}
+        self._toast_panel = {'bg': bg, 'border': border, 'ui': ui}
 
     def _unlock_achievement(self, key, title, subtitle=None):
         ach = self._save_data.setdefault('achievements', {})
@@ -383,6 +429,7 @@ class RushHourUrsina:
         self._beep('select')
 
     def toggle_view_mode(self):
+        self._tutorial_on_toggle_view()
         self.is_ortho = not self.is_ortho
         if self.is_ortho:
             self._camera_3d_pos = Vec3(camera.position)
@@ -478,19 +525,26 @@ class RushHourUrsina:
         self.optimal_moves_cache[idx] = value
         return value
 
-    def _stars_for_moves(self, moves, optimal):
+    def _stars_for_moves(self, moves, optimal, elapsed):
+        moves = int(moves)
+        elapsed = float(elapsed)
         if optimal is None:
+            if elapsed <= 45.0:
+                return 3
+            if elapsed <= 90.0:
+                return 2
             return 1
-        diff = int(moves) - int(optimal)
-        if diff <= 2:
+
+        diff = moves - int(optimal)
+        if diff <= 1 and elapsed <= 45.0:
             return 3
-        if diff <= 5:
+        if diff <= 4 and elapsed <= 90.0:
             return 2
         return 1
 
     def _stars_text(self, count):
         c = max(1, min(3, int(count)))
-        return '★' * c + '☆' * (3 - c)
+        return f"Stars: {'*' * c}{'-' * (3 - c)}"
 
     def _update_hud(self):
         opt = self.optimal_moves
@@ -503,7 +557,11 @@ class RushHourUrsina:
         best_time_s = self._format_time(best_time) if isinstance(best_time, (int, float)) else "--:--.-"
         best_moves_s = str(best_moves) if isinstance(best_moves, int) else "-"
 
-        self.level_text.text = f"Level {self.current_level_idx + 1} | Moves: {self.moves_count}/{opt_s} | Time: {t} | Best: {best_moves_s}@{best_time_s}"
+        self.level_text.text = (
+            f"Level {self.current_level_idx + 1}\n"
+            f"Moves: {self.moves_count}/{opt_s} | Time: {t}\n"
+            f"Best: {best_moves_s} moves | {best_time_s}"
+        )
 
     def _trigger_shake(self, strength=0.22, duration=0.16):
         now = pytime.perf_counter()
@@ -603,11 +661,10 @@ class RushHourUrsina:
         if key in ('p', 'P'):
             self.take_screenshot()
             return
-        if key in ('f3', 'F3'):
-            self.dev_overlay_enabled = not self.dev_overlay_enabled
-            self._show_toast("Dev Overlay", "On" if self.dev_overlay_enabled else "Off")
+        if self._tutorial_active and self._tutorial_step == 0:
             return
         if key == 'scroll up':
+            self._tutorial_on_zoom()
             if self.is_ortho:
                 self._ortho_zoom = min(15.0, self._ortho_zoom * 1.08)
                 self._apply_ortho_lens(force=True)
@@ -616,6 +673,7 @@ class RushHourUrsina:
                 self._set_camera_base()
             return
         if key == 'scroll down':
+            self._tutorial_on_zoom()
             if self.is_ortho:
                 self._ortho_zoom = max(0.3, self._ortho_zoom / 1.08)
                 self._apply_ortho_lens(force=True)
@@ -630,6 +688,13 @@ class RushHourUrsina:
                 self.drag_mode = None
                 self.drag_vehicle_idx = None
                 return
+                
+            if getattr(self, '_active_hint_move', None) is not None:
+                hint_v_idx, _ = self._active_hint_move
+                clicked_v_idx = getattr(hovered, 'vehicle_idx', None) if hovered else None
+                if clicked_v_idx != hint_v_idx:
+                    self._active_hint_move = None
+                    self._update_move_range_highlight()
 
             if hovered is not None and hasattr(hovered, 'vehicle_idx'):
                 self.selected_vehicle_idx = hovered.vehicle_idx
@@ -715,15 +780,14 @@ class RushHourUrsina:
         b2.add_vehicle(Vehicle(6, "Gray Truck", "#7f8c8d", 30, 3, Direction.HORIZONTAL))
         levels.append(b2)
 
-        b3 = Board()
-        b3.add_vehicle(Vehicle(0, "Red Car", "#e74c3c", 12, 1, Direction.HORIZONTAL, True))  # 目标车 (2,0)-(2,1)
-        b3.add_vehicle(Vehicle(1, "Truck H3", "#7f8c8d", 13, 3, Direction.VERTICAL))  # (0,0)-(0,2)
-        b3.add_vehicle(Vehicle(2, "Green Car", "#2ecc71", 30, 2, Direction.HORIZONTAL))  # (0,4)-(0,5)
-        b3.add_vehicle(Vehicle(3, "Blue Car V2", "#3498db", 26, 2, Direction.VERTICAL))  # (1,2)-(2,2)
-        b3.add_vehicle(Vehicle(4, "Purple Truck V3", "#8e44ad", 6, 3, Direction.HORIZONTAL))  # (1,5)-(3,5) 堵出口
-        b3.add_vehicle(Vehicle(5, "Yellow Car V2", "#f1c40f", 20, 2, Direction.HORIZONTAL))  # (3,2)-(4,2)
-        b3.add_vehicle(Vehicle(6, "Orange Car H2", "#e67e22", 4, 3, Direction.VERTICAL))  # (3,3)-(3,4)
-        levels.append(b3)
+        b3 = Board() 
+        b3.add_vehicle(Vehicle(0, "Red Car", "#e74c3c", 12, 2, Direction.HORIZONTAL, True))     
+        b3.add_vehicle(Vehicle(1, "Purple Car", "#9b59b6", 14, 2, Direction.VERTICAL))       
+        b3.add_vehicle(Vehicle(2, "Yellow Car", "#f1c40f", 8, 2, Direction.HORIZONTAL))         
+        b3.add_vehicle(Vehicle(3, "Green Car", "#2ecc71", 26, 2, Direction.HORIZONTAL))        
+        b3.add_vehicle(Vehicle(4, "Orange Truck", "#e67e22", 18, 3, Direction.VERTICAL))          
+        b3.add_vehicle(Vehicle(5, "Blue Truck", "#3498db", 5, 3, Direction.VERTICAL))        
+        levels.append(b3) 
 
         b4 = Board()
         b4.add_vehicle(Vehicle(0, "Red Car", "#e74c3c", 13, 2, Direction.HORIZONTAL, True))
@@ -743,50 +807,61 @@ class RushHourUrsina:
 
     def _build_ui_buttons(self):
         self.buttons = []
+        self.action_buttons = {}
+        self.action_buttons_by_text = {}
 
         def style_btn(b, base):
-            b.text_color = color.rgba(0, 0, 0, 0.95)
-            b.highlight_color = color.rgba(base.r + 0.08, base.g + 0.08, base.b + 0.08, 1)
-            b.pressed_color = color.rgba(base.r - 0.06, base.g - 0.06, base.b - 0.06, 1)
-            b.color = color.rgba(base.r, base.g, base.b, 0.88)
-            t = (b.text or '')
-            s = 0.5
-            b.text_entity.scale = s
+            b.text_color = color.rgba(0, 0, 0, 0.98)
+            c = color.rgba(base.r, base.g, base.b, 1)
+            b.color = c
+            b.highlight_color = c
+            b.pressed_color = c
+            b.text_size = 0.5
+            b.highlight_text_size = 0.5
+            b.highlight_text_color = b.text_color
+            if getattr(b, 'text_entity', None) is not None:
+                b.text_entity.enabled = True
+                b.text_entity.z = -0.10
             return b
 
-        def mk_btn(text, x, y, on_click, tint):
+        def mk_btn(text, x, y, on_click, tint, scale_xy=(0.115, 0.045), label_scale=0.50):
             b = Button(text=text, parent=self.bottom_ui, scale=(0.115, 0.045), position=(x, y), radius=0.95)
+            b.scale = scale_xy
             style_btn(b, tint)
             b.on_click = on_click
+            self._set_button_label(b, text, scale=label_scale)
             self.buttons.append(b)
             return b
 
-        action_y = -0.030
-        gap = 0.016
-        base_w = 0.110
+        action_x = 0.0
+        gap = 0.015
+        base_h = 0.065
         labels = [
-            ("UNDO", self.undo_move, self.btn_undo, base_w),
-            ("RESET", self.reset_level, self.btn_reset, base_w),
-            ("HINT", self.show_hint, self.btn_hint, base_w),
-            ("VERIFY", self.start_validation, self.btn_validate, base_w),
-            ("RESET VIEW", self.reset_view, self.btn_neutral, base_w + 0.030),
-            ("2D/3D", self.toggle_view_mode, self.btn_neutral, base_w + 0.010),
-            # ("SCREENSHOT", self.take_screenshot, self.btn_neutral, base_w + 0.032),
+            ("UNDO", self.undo_move, self.btn_undo, base_h, 0.56),
+            ("RESET", self.reset_level, self.btn_reset, base_h, 0.56),
+            ("HINT", self.show_hint, self.btn_hint, base_h, 0.56),
+            ("RESET VIEW", self.reset_view, self.btn_neutral, base_h, 0.44),
+            ("2D/3D", self.toggle_view_mode, self.btn_neutral, base_h, 0.52),
         ]
-        total_w = sum(w for _, _, _, w in labels) + gap * (len(labels) - 1)
-        x = -total_w / 2
-        for t, cb, c, w in labels:
-            b = mk_btn(t, x + w / 2, action_y, cb, c)
-            b.scale_x = w
-            style_btn(b, c)
-            x += w + gap
+        
+        def make_level_cb(idx):
+            return lambda: self.load_level(idx)
 
-        self.level_buttons = []
         for i in range(4):
-            b = Button(text=f"LEVEL {i+1}", parent=self.bottom_ui, scale=(0.110, 0.040), position=(-0.205 + i * 0.14, 0.055), radius=0.95)
-            style_btn(b, color.rgba(0.20, 0.42, 0.32, 1))
-            b.on_click = (lambda idx=i: self.load_level(idx))
-            self.level_buttons.append(b)
+            labels.append((f"LEVEL {i+1}", make_level_cb(i), color.rgba(0.20, 0.42, 0.32, 1), base_h, 0.46))
+
+        total_h = sum(h for _, _, _, h, _ in labels) + gap * (len(labels) - 1)
+        y = total_h / 2 - labels[0][3] / 2
+        
+        self.level_buttons = []
+        for t, cb, c, h, label_scale in labels:
+            b = mk_btn(t, action_x, y, cb, c, scale_xy=(0.18, h), label_scale=label_scale)
+            if t.startswith("LEVEL"):
+                self.level_buttons.append(b)
+            else:
+                self.action_buttons[t] = b
+                self.action_buttons_by_text[t.upper()] = b
+            y -= h + gap
 
     def reset_view(self):
         self.rotation_y = 45.0
@@ -803,10 +878,12 @@ class RushHourUrsina:
         self.level_elapsed = 0.0
         self.optimal_moves = self._get_optimal_moves(idx)
         self.hint_used_this_level = False
-        self.status.text = "3D Consistency Engine Active"
+        self._active_hint_move = None
+        self.status.text = "Ready to play"
         self.status.color = self.ui_muted
         self._rebuild_scene()
         self._update_hud()
+        self._tutorial_maybe_start()
 
     def reset_level(self):
         self.load_level(self.current_level_idx)
@@ -819,6 +896,7 @@ class RushHourUrsina:
         self.board.update_occupied()
         self.moves_count = max(0, self.moves_count - 1)
         self.selected_vehicle_idx = None
+        self._active_hint_move = None
         self._sync_vehicle_entities()
         self._update_hud()
 
@@ -831,15 +909,19 @@ class RushHourUrsina:
             self._save()
         path = solve_bfs(self.board)
         if path:
-            v_idx, _ = path[0]
+            v_idx, new_pos = path[0]
             self.selected_vehicle_idx = v_idx
+            self._active_hint_move = (v_idx, new_pos)
             self.status.text = f"Hint: Move {self.board.vehicles[v_idx].name}"
             self.status.color = self.btn_hint
             self._sync_vehicle_entities()
             self._update_hud()
+            self._update_move_range_highlight()
         else:
-            self.status.text = "No escape path!"
-            self.status.color = self.btn_validate
+            self.status.text = "No move hint available"
+            self.status.color = self.ui_muted
+            self._active_hint_move = None
+            self._update_move_range_highlight()
 
     def start_validation(self):
         if self.validation_active:
@@ -1087,12 +1169,16 @@ class RushHourUrsina:
         if self.selected_vehicle_idx is None or self.board is None:
             self._clear_highlights()
             return
-        v = self.board.vehicles[self.selected_vehicle_idx]
-        positions = self._valid_positions_for_vehicle(v)
-        cells = set()
-        for p in positions:
-            cells.update(v.get_cells(p))
-        self._set_highlight_cells(cells, color.rgba(0.15, 0.85, 0.25, 0.35))
+            
+        if getattr(self, '_active_hint_move', None) is not None:
+            hint_v_idx, hint_new_pos = self._active_hint_move
+            if self.selected_vehicle_idx == hint_v_idx:
+                v = self.board.vehicles[hint_v_idx]
+                cells = self._tutorial_path_cells(v, int(v.position), int(hint_new_pos))
+                self._set_highlight_cells(cells, color.rgba(0.15, 0.75, 0.95, 0.35))
+                return
+
+        self._clear_highlights()
 
     def _cell_from_world_point(self, world_point):
         local = self.pivot.world_to_local_point(world_point)
@@ -1198,11 +1284,13 @@ class RushHourUrsina:
 
     def _execute_move(self, v_idx, new_pos):
         ent = self.vehicle_ent_by_idx.get(v_idx)
+        old_pos = self.board.vehicles[v_idx].position
         self.move_history.append((v_idx, self.board.vehicles[v_idx].position))
         self.board.vehicles[v_idx].position = new_pos
         self.board.update_occupied()
         self.moves_count += 1
         self.selected_vehicle_idx = None
+        self._active_hint_move = None
         self._beep('move')
 
         if ent is not None:
@@ -1222,12 +1310,14 @@ class RushHourUrsina:
         self._clear_preview_overlays()
         self._update_move_range_highlight()
         self._update_hud()
+        self._tutorial_on_move(v_idx, old_pos, new_pos)
 
         if self.board.check_win():
-            stars = self._stars_for_moves(self.moves_count, self.optimal_moves)
+            stars = self._stars_for_moves(self.moves_count, self.optimal_moves, self.level_elapsed)
             self._record_result(stars)
             self.status.text = f"{self._stars_text(stars)} Clear!"
             self.status.color = color.rgba(0.78, 0.72, 0.50, 1)
+            self._show_toast("Great!", f"{self._stars_text(stars)}  Time {self._format_time(self.level_elapsed)}")
             next_idx = self.current_level_idx + 1 if self.current_level_idx < len(self.level_data) - 1 else 0
             invoke(self.load_level, next_idx, delay=0.9)
 
@@ -1296,6 +1386,7 @@ class RushHourUrsina:
                 if wheel:
                     break
             if wheel:
+                self._tutorial_on_zoom()
                 if wheel > 0:
                     self._ortho_zoom = min(15.0, self._ortho_zoom * 1.10)
                 else:
@@ -1309,12 +1400,6 @@ class RushHourUrsina:
 
         self._render_timer += u_time.dt
         if self._render_timer >= 0.15:
-            err = self.calculate_geometry_error()
-            if self.dev_overlay_enabled:
-                self.metrics.enabled = True
-                self.metrics.text = f"Render: {self.last_render_ms:.1f}ms | Error: {err:.6f}"
-            else:
-                self.metrics.enabled = False
             self._update_hud()
             self._render_timer = 0.0
 
@@ -1420,18 +1505,22 @@ class RushHourUrsina:
             panel = self._toast_panel
             self._toast_panel = None
             bg = panel.get('bg')
+            border = panel.get('border')
             ui = panel.get('ui')
             try:
                 if bg is not None:
                     bg.animate_color(color.rgba(bg.color.r, bg.color.g, bg.color.b, 0), duration=0.22, curve=curve.out_quad)
-                    if hasattr(bg, '_shadow'):
-                        bg._shadow.animate_color(color.rgba(bg._shadow.color.r, bg._shadow.color.g, bg._shadow.color.b, 0), duration=0.22, curve=curve.out_quad)
                     invoke(destroy, bg, delay=0.24)
+                if border is not None:
+                    border.animate_color(color.rgba(border.color.r, border.color.g, border.color.b, 0), duration=0.22, curve=curve.out_quad)
+                    invoke(destroy, border, delay=0.24)
                 if ui is not None:
                     invoke(destroy, ui, delay=0.24)
             except Exception:
                 if bg is not None:
                     destroy(bg)
+                if border is not None:
+                    destroy(border)
                 if ui is not None:
                     destroy(ui)
 
@@ -1466,7 +1555,423 @@ class RushHourUrsina:
                 self._camera_shake_until = 0.0
                 camera.position = self._camera_base_pos
 
+        self._tutorial_update()
+
         self.last_render_ms = (pytime.perf_counter() - start) * 1000.0
+
+    def _tutorial_seen(self):
+        return False
+
+    def _tutorial_mark_seen(self):
+        return
+
+    def _tutorial_maybe_start(self):
+        if self.current_level_idx != 0:
+            self._tutorial_stop(mark_seen=False)
+            return
+        if self._tutorial_active:
+            return
+        if self._tutorial_seen():
+            return
+        self._tutorial_start()
+
+    def _tutorial_start(self):
+        self._tutorial_active = True
+        self._tutorial_step = 0
+        self._tutorial_step_done = False
+        self._tutorial_step_started_at = pytime.perf_counter()
+        self._tutorial_rotate_ref = float(self.rotation_y)
+        self._tutorial_target_vehicle_idx = self._tutorial_find_target_vehicle_idx()
+        self._tutorial_layout = 'intro'
+        self._tutorial_build_ui(layout='intro')
+        self._tutorial_apply_step()
+
+    def _tutorial_stop(self, mark_seen):
+        if mark_seen:
+            self._tutorial_mark_seen()
+        self._tutorial_active = False
+        self._tutorial_step = 0
+        self._tutorial_step_done = False
+        self._tutorial_clear_vehicle_highlight()
+        self._tutorial_clear_grid_highlights()
+        self._tutorial_clear_ui_highlights()
+        self._tutorial_destroy_ui()
+
+    def _tutorial_find_target_vehicle_idx(self):
+        if self.board is None:
+            return None
+        for i, v in enumerate(self.board.vehicles):
+            if getattr(v, 'is_target', False):
+                return i
+        return 0 if self.board.vehicles else None
+
+    def _tutorial_build_ui(self, layout='intro'):
+        self._tutorial_destroy_ui()
+        self._tutorial_layout = layout
+        scale = (0.36, 0.31)
+        pos = (0.60, -0.29)  # Aligned to same left edge as top_panel (0.67 - 0.40/2 = 0.47). pos.x = 0.47 + 0.36/2 = 0.65
+        
+        # Align with top_panel left edge exactly
+        # top_panel left = 0.67 - (0.40 / 2) = 0.47
+        # tutorial left = pos_x - (0.40 / 2) = 0.47 -> pos_x = 0.67
+        scale = (0.40, 0.31)
+        pos = (0.67, -0.32)
+
+        radius = 0.18
+        base_z = 0.20
+
+        border = Button(parent=camera.ui, text='', scale=(scale[0] + 0.003, scale[1] + 0.003), position=pos, color=self.ui_border, radius=radius)
+        border.shader = unlit_shader
+        border.collider = None
+        border.z = base_z + 0.01
+
+        panel = Button(parent=camera.ui, text='', scale=scale, position=pos, color=self.ui_bg, radius=radius)
+        panel.shader = unlit_shader
+        panel.collider = 'box'
+        panel.z = base_z + 0.00
+
+        ui = Entity(parent=camera.ui, position=pos)
+        ui.z = base_z - 0.01
+
+        pad_x = 0.03
+        title_x = -(scale[0] / 2) + pad_x
+        title_y = (scale[1] / 2) - 0.065
+        body_y = title_y - 0.085
+        btn_y = -(scale[1] / 2) + 0.055
+
+        title = Text("", parent=ui, origin=(-0.5, 0), x=title_x, y=title_y, scale=1.05, color=color.rgba(0.46, 0.38, 0.22, 1))
+        body = Text("", parent=ui, origin=(-0.5, 0), x=title_x, y=body_y, scale=0.76, color=self.ui_text)
+
+        btn_skip = Button(text="Skip", parent=ui, scale=(0.080, 0.035), position=(scale[0] / 2 - 0.20, btn_y), radius=0.95)
+        btn_skip.color = color.rgba(self.btn_neutral.r, self.btn_neutral.g, self.btn_neutral.b, 1)
+        btn_skip.text_color = color.rgba(0, 0, 0, 0.98)
+        btn_skip.highlight_color = btn_skip.color
+        btn_skip.pressed_color = btn_skip.color
+        btn_skip.text_size = 0.5
+        btn_skip.highlight_text_size = 0.5
+        btn_skip.highlight_text_color = btn_skip.text_color
+        if getattr(btn_skip, 'text_entity', None) is not None:
+            btn_skip.text_entity.enabled = True
+            btn_skip.text_entity.z = -0.10
+        btn_skip.z = -0.01
+        btn_skip.on_click = lambda: self._tutorial_stop(mark_seen=True)
+        self._set_button_label(btn_skip, "Skip", scale=0.52)
+
+        btn_next_text = "Next" if layout == 'steps' else "Start Tutorial"
+        btn_next_w = 0.120 if layout == 'steps' else 0.160
+        btn_next = Button(text=btn_next_text, parent=ui, scale=(btn_next_w, 0.035), position=(scale[0] / 2 - 0.075, btn_y), radius=0.95)
+        btn_next.color = color.rgba(self.btn_undo.r, self.btn_undo.g, self.btn_undo.b, 1)
+        btn_next.text_color = color.rgba(0, 0, 0, 0.98)
+        btn_next.highlight_color = btn_next.color
+        btn_next.pressed_color = btn_next.color
+        btn_next.text_size = 0.5
+        btn_next.highlight_text_size = 0.5
+        btn_next.highlight_text_color = btn_next.text_color
+        if getattr(btn_next, 'text_entity', None) is not None:
+            btn_next.text_entity.enabled = True
+            btn_next.text_entity.z = -0.10
+        btn_next.z = -0.01
+        btn_next.on_click = (self._tutorial_next_clicked if layout == 'steps' else self._tutorial_start_clicked)
+        self._set_button_label(btn_next, btn_next_text, scale=0.52)
+
+        self._tutorial_panel_shadow = None
+        self._tutorial_panel_border = border
+        self._tutorial_panel = panel
+        self._tutorial_ui = ui
+        self._tutorial_title = title
+        self._tutorial_body = body
+        self._tutorial_btn_skip = btn_skip
+        self._tutorial_btn_next = btn_next
+        self._tutorial_flash_bg = None
+        
+        if layout == 'intro':
+            flash_bg = Button(parent=camera.ui, text='', scale=scale, position=pos, color=color.rgba(1, 0.88, 0.25, 0), radius=radius)
+            flash_bg.shader = unlit_shader
+            flash_bg.collider = None
+            flash_bg.z = panel.z - 0.005
+            self._tutorial_flash_bg = flash_bg
+
+    def _tutorial_destroy_ui(self):
+        for e in (getattr(self, '_tutorial_panel', None), 
+                  getattr(self, '_tutorial_panel_border', None), 
+                  getattr(self, '_tutorial_panel_shadow', None),
+                  getattr(self, '_tutorial_flash_bg', None)):
+            if e is not None:
+                destroy(e)
+        if self._tutorial_ui is not None:
+            destroy(self._tutorial_ui)
+        self._tutorial_panel = None
+        self._tutorial_panel_border = None
+        self._tutorial_panel_shadow = None
+        self._tutorial_ui = None
+        self._tutorial_title = None
+        self._tutorial_body = None
+        self._tutorial_btn_next = None
+        self._tutorial_btn_skip = None
+
+    def _tutorial_start_clicked(self):
+        if not self._tutorial_active:
+            return
+        if self._tutorial_step != 0:
+            return
+        self._tutorial_step = 1
+        self._tutorial_step_done = False
+        self._tutorial_step_started_at = pytime.perf_counter()
+        self._tutorial_rotate_ref = float(self.rotation_y)
+        self._tutorial_target_vehicle_idx = self._tutorial_find_target_vehicle_idx()
+        self._tutorial_clear_vehicle_highlight()
+        self._tutorial_clear_grid_highlights()
+        self._tutorial_destroy_ui()
+        self._tutorial_build_ui(layout='steps')
+        self._tutorial_apply_step()
+
+    def _tutorial_next_clicked(self):
+        if not self._tutorial_active:
+            return
+        requires_action = self._tutorial_step in (1, 2, 3)
+        if requires_action and not self._tutorial_step_done:
+            self._show_toast("Complete this step first", "Do the action once, then click Next")
+            return
+        if self._tutorial_step >= 4:
+            self._tutorial_stop(mark_seen=True)
+            return
+        self._tutorial_step += 1
+        self._tutorial_step_done = False
+        self._tutorial_step_started_at = pytime.perf_counter()
+        self._tutorial_rotate_ref = float(self.rotation_y)
+        self._tutorial_apply_step()
+
+    def _tutorial_apply_step(self):
+        if not self._tutorial_active:
+            return
+        self._tutorial_clear_ui_highlights()
+        self._tutorial_clear_grid_highlights()
+        self._tutorial_target_vehicle_idx = self._tutorial_find_target_vehicle_idx()
+
+        if self._tutorial_step == 0:
+            self._tutorial_set_text(
+                "Tutorial (Level 1)",
+                "Goal: move the red car\nto the red exit.\n\nThis quick tutorial teaches\nthe core controls.\n\nClick Start Tutorial\nto begin."
+            )
+            if self._tutorial_btn_next is not None:
+                self._tutorial_btn_next.text = "Start Tutorial"
+                self._set_button_label(self._tutorial_btn_next, "Start Tutorial", scale=0.42)
+            self._tutorial_clear_vehicle_highlight()
+            return
+
+        if self._tutorial_step == 1:
+            self._tutorial_move_target_pos = None
+            self._tutorial_set_text(
+                "Step 1 — Move the car",
+                "Click the highlighted red car,\nthen drag it onto the\nhighlighted destination tiles."
+            )
+            if self._tutorial_btn_next is not None:
+                self._tutorial_btn_next.text = "Next"
+                self._set_button_label(self._tutorial_btn_next, "Next", scale=0.42)
+            self._tutorial_set_vehicle_highlight(True)
+            if self.board is not None and self._tutorial_target_vehicle_idx is not None:
+                v = self.board.vehicles[self._tutorial_target_vehicle_idx]
+                valid_positions = sorted(self._valid_positions_for_vehicle(v))
+                if len(valid_positions) <= 1:
+                    self._tutorial_move_target_pos = None
+                    self._tutorial_step_done = True
+                    self._show_toast("No move available", "Click Next to continue")
+                elif valid_positions:
+                    curr = int(v.position)
+                    target_pos = valid_positions[0] if int(valid_positions[0]) != curr else int(valid_positions[-1])
+                    self._tutorial_move_target_pos = int(target_pos)
+                    road_cells = self._tutorial_path_cells(v, curr, int(target_pos))
+                    self._tutorial_set_road_highlight(road_cells, color.rgba(0.15, 0.75, 0.95, 0.22))
+                    self._tutorial_set_dest_highlight(v.get_cells(int(target_pos)), color.rgba(1.0, 0.88, 0.25, 0.35))
+            return
+
+        if self._tutorial_step == 2:
+            self._tutorial_set_text(
+                "Step 2 — Rotate the camera",
+                "Click empty space,\nthen drag the mouse\nto rotate the view."
+            )
+            if self._tutorial_btn_next is not None:
+                self._tutorial_btn_next.text = "Next"
+                self._set_button_label(self._tutorial_btn_next, "Next", scale=0.42)
+            self._tutorial_clear_vehicle_highlight()
+            return
+
+        if self._tutorial_step == 3:
+            self._tutorial_set_text(
+                "Step 3 — Zoom",
+                "Use the mouse wheel\nto zoom in and out."
+            )
+            if self._tutorial_btn_next is not None:
+                self._tutorial_btn_next.text = "Next"
+                self._set_button_label(self._tutorial_btn_next, "Next", scale=0.42)
+            return
+
+        if self._tutorial_step == 4:
+            self._tutorial_set_text(
+                "Step 4 — Toggle View",
+                "Press 'V' to switch between\n2D and 3D view."
+            )
+            if self._tutorial_btn_next is not None:
+                self._tutorial_btn_next.text = "Finish"
+                self._set_button_label(self._tutorial_btn_next, "Finish", scale=0.40)
+            return
+        self._tutorial_stop(mark_seen=True)
+
+    def _tutorial_path_cells(self, v: Vehicle, start_pos: int, end_pos: int):
+        if start_pos == end_pos:
+            return list(v.get_cells(start_pos))
+        step = 1 if v.direction == Direction.HORIZONTAL else 6
+        s = step if end_pos > start_pos else -step
+        cells = set()
+        p = start_pos
+        while True:
+            cells.update(v.get_cells(p))
+            if p == end_pos:
+                break
+            p += s
+            if abs(p - start_pos) > 60:
+                break
+        return sorted(cells)
+
+    def _tutorial_clear_grid_highlights(self):
+        for e in self._tutorial_road_overlays:
+            destroy(e)
+        for e in self._tutorial_dest_overlays:
+            destroy(e)
+        self._tutorial_road_overlays = []
+        self._tutorial_dest_overlays = []
+
+    def _tutorial_set_road_highlight(self, cells, tint):
+        for cell in sorted(set(cells)):
+            tile = self.tile_by_cell.get(cell)
+            if tile is None:
+                continue
+            overlay = Entity(
+                parent=self.grid_parent,
+                model='cube',
+                position=tile.position + Vec3(0, 0.080, 0),
+                scale=(0.985, 0.02, 0.985),
+                color=tint,
+                shader=unlit_shader,
+            )
+            overlay.collider = None
+            self._tutorial_road_overlays.append(overlay)
+
+    def _tutorial_set_dest_highlight(self, cells, tint):
+        for cell in sorted(set(cells)):
+            tile = self.tile_by_cell.get(cell)
+            if tile is None:
+                continue
+            overlay = Entity(
+                parent=self.grid_parent,
+                model='cube',
+                position=tile.position + Vec3(0, 0.105, 0),
+                scale=(0.99, 0.02, 0.99),
+                color=tint,
+                shader=unlit_shader,
+            )
+            overlay.collider = None
+            self._tutorial_dest_overlays.append(overlay)
+
+    def _tutorial_set_text(self, title, body):
+        if self._tutorial_title is not None:
+            self._tutorial_title.text = title
+        if self._tutorial_body is not None:
+            self._tutorial_body.text = body
+
+    def _tutorial_add_ui_highlight(self, target_btn):
+        try:
+            hl = Entity(parent=target_btn, model='quad', scale=(1.14, 1.65), color=color.rgba(1, 0.88, 0.25, 0.22), shader=unlit_shader)
+            hl.z = -0.20
+            hl.collider = None
+        except Exception:
+            return
+        self._tutorial_ui_highlights.append(hl)
+
+    def _tutorial_clear_ui_highlights(self):
+        for e in self._tutorial_ui_highlights:
+            destroy(e)
+        self._tutorial_ui_highlights = []
+
+    def _tutorial_set_vehicle_highlight(self, enabled):
+        if not enabled:
+            self._tutorial_clear_vehicle_highlight()
+            return
+        if self._tutorial_vehicle_highlight is not None:
+            return
+        idx = self._tutorial_target_vehicle_idx
+        if idx is None:
+            return
+        ent = self.vehicle_ent_by_idx.get(idx)
+        if ent is None:
+            return
+        try:
+            hl = Entity(parent=ent, model='cube', scale=(1.08, 1.55, 1.12), color=color.rgba(1, 0.88, 0.25, 0.22), shader=unlit_shader)
+            hl.y = 0.0
+            hl.collider = None
+        except Exception:
+            return
+        self._tutorial_vehicle_highlight = hl
+
+    def _tutorial_clear_vehicle_highlight(self):
+        if self._tutorial_vehicle_highlight is not None:
+            destroy(self._tutorial_vehicle_highlight)
+        self._tutorial_vehicle_highlight = None
+
+    def _tutorial_on_move(self, v_idx, old_pos, new_pos):
+        if not self._tutorial_active:
+            return
+        if self._tutorial_step == 1 and not self._tutorial_step_done:
+            if self._tutorial_target_vehicle_idx is not None and v_idx == self._tutorial_target_vehicle_idx:
+                target_pos = self._tutorial_move_target_pos
+                if target_pos is not None and int(new_pos) == int(target_pos):
+                    self._tutorial_step_done = True
+                    self._show_toast("Nice!", "Click Next to continue")
+
+    def _tutorial_on_zoom(self):
+        if not self._tutorial_active:
+            return
+        if self._tutorial_step == 3 and not self._tutorial_step_done:
+            self._tutorial_step_done = True
+            self._show_toast("Great!", "Click Next to continue")
+
+    def _tutorial_on_toggle_view(self):
+        if not self._tutorial_active:
+            return
+        if self._tutorial_step == 4 and not self._tutorial_step_done:
+            self._tutorial_step_done = True
+            self._show_toast("Great!", "Click Finish to end the tutorial")
+
+    def _tutorial_update(self):
+        if not self._tutorial_active:
+            return
+        if self.current_level_idx != 0:
+            self._tutorial_stop(mark_seen=False)
+            return
+
+        if self._tutorial_layout == 'intro' and getattr(self, '_tutorial_flash_bg', None):
+            t = pytime.perf_counter() * 5.0
+            alpha = (math.sin(t) * 0.5 + 0.5) * 0.35
+            self._tutorial_flash_bg.color = color.rgba(1, 0.88, 0.25, alpha)
+
+        if self._tutorial_step == 2 and not self._tutorial_step_done:
+            if self.drag_mode in ('rotate', 'rotate2d') and held_keys['left mouse'] and abs(float(self.rotation_y) - float(self._tutorial_rotate_ref)) >= 12.0:
+                self._tutorial_step_done = True
+                self._show_toast("Good!", "Click Next to continue")
+
+        if self._tutorial_step == 1:
+            if self._tutorial_vehicle_highlight is None:
+                self._tutorial_set_vehicle_highlight(True)
+            if self._tutorial_vehicle_highlight is not None:
+                t = pytime.perf_counter()
+                pulse = 1.0 + 0.06 * math.sin(t * 4.0)
+                a = 0.18 + 0.10 * (0.5 + 0.5 * math.sin(t * 4.0))
+                self._tutorial_vehicle_highlight.scale_x = 1.08 * pulse
+                self._tutorial_vehicle_highlight.scale_y = 1.55 * pulse
+                self._tutorial_vehicle_highlight.scale_z = 1.12 * pulse
+                self._tutorial_vehicle_highlight.color = color.rgba(1, 0.88, 0.25, a)
+        else:
+            self._tutorial_clear_vehicle_highlight()
 
     def _count_rotation(self, delta_degrees):
         stats = self._save_data.setdefault('stats', {})
