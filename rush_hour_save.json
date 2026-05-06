@@ -1,0 +1,54 @@
+{
+  "levels": {
+    "0": {
+      "best_time": 7.904574399999998,
+      "best_moves": 2,
+      "last_time": 7.904574399999998,
+      "last_moves": 2,
+      "last_stars": 3
+    },
+    "1": {
+      "best_time": 4.9180718,
+      "best_moves": 3,
+      "last_time": 6.452536200000001,
+      "last_moves": 3,
+      "last_stars": 3
+    },
+    "2": {
+      "best_time": 5.5135863,
+      "best_moves": 4,
+      "last_time": 5.5135863,
+      "last_moves": 4,
+      "last_stars": 3
+    }
+  },
+  "achievements": {
+    "fast_hand": {
+      "unlocked_at": 1778078818.9092882
+    }
+  },
+  "stats": {
+    "rotation_units": 78,
+    "rotations": 78,
+    "snapshots": 0,
+    "hints_used_total": 0,
+    "levels_cleared": {
+      "0": {
+        "cleared": true,
+        "cleared_without_hint": true,
+        "cleared_optimal": true
+      },
+      "1": {
+        "cleared": true,
+        "cleared_without_hint": true,
+        "cleared_optimal": true
+      },
+      "2": {
+        "cleared": true,
+        "cleared_without_hint": true,
+        "cleared_optimal": true
+      }
+    }
+  },
+  "tutorial": {}
+}
