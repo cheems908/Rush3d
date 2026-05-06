@@ -1,0 +1,13 @@
+# ignore .vscode
+.vscode/
+# use obj rather than gltf
+gltf/
+
+models_compressed/
+
+assets/
+obj/*.png
+
+*.rar
+*.zip
+*.7z

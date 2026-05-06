@@ -1,0 +1,34 @@
+# Blender 5.1.1 MTL File: 'None'
+# www.blender.org
+
+newmtl ColorVar1_Material
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd ColorVar1_Texture.png
+map_Ks ColorVar1_Texture.png
+map_refl ColorVar1_Texture.png
+
+newmtl ColorVar2_Material
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd ColorVar2_Texture.png
+map_Ks ColorVar2_Texture.png
+map_refl ColorVar2_Texture.png
+
+newmtl Lights_Mat
+Ns 30.996521
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 1
+map_Kd LightsTextureAtlas.png
+map_Ke LightsTextureAtlas.png
