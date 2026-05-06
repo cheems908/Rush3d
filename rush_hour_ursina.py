@@ -704,16 +704,13 @@ class RushHourUrsina:
         levels.append(b2)
 
         b3 = Board()
-        b3.add_vehicle(Vehicle(0, "Red Car", "#e74c3c", 13, 2, Direction.HORIZONTAL, True))
-        b3.add_vehicle(Vehicle(1, "Purple Truck", "#8e44ad", 0, 3, Direction.HORIZONTAL))
-        b3.add_vehicle(Vehicle(2, "Yellow Car", "#f1c40f", 3, 2, Direction.VERTICAL))
-        b3.add_vehicle(Vehicle(3, "Orange Truck", "#e67e22", 5, 3, Direction.VERTICAL))
-        b3.add_vehicle(Vehicle(4, "Green Car", "#2ecc71", 6, 2, Direction.HORIZONTAL))
-        b3.add_vehicle(Vehicle(5, "Blue Car (L2)", "#3498db", 10, 2, Direction.VERTICAL))
-        b3.add_vehicle(Vehicle(6, "Gray Car", "#7f8c8d", 12, 2, Direction.VERTICAL))
-        b3.add_vehicle(Vehicle(7, "Lime Car", "#2ecc71", 19, 2, Direction.HORIZONTAL))
-        b3.add_vehicle(Vehicle(8, "Navy Truck", "#2c3e50", 22, 3, Direction.VERTICAL))
-        b3.add_vehicle(Vehicle(9, "Teal Car", "#16a085", 31, 2, Direction.HORIZONTAL))
+        b3.add_vehicle(Vehicle(0, "Red Car", "#e74c3c", 12, 1, Direction.HORIZONTAL, True))  # 目标车 (2,0)-(2,1)
+        b3.add_vehicle(Vehicle(1, "Truck H3", "#7f8c8d", 13, 3, Direction.VERTICAL))  # (0,0)-(0,2)
+        b3.add_vehicle(Vehicle(2, "Green Car", "#2ecc71", 30, 2, Direction.HORIZONTAL))  # (0,4)-(0,5)
+        b3.add_vehicle(Vehicle(3, "Blue Car V2", "#3498db", 26, 2, Direction.VERTICAL))  # (1,2)-(2,2)
+        b3.add_vehicle(Vehicle(4, "Purple Truck V3", "#8e44ad", 6, 3, Direction.HORIZONTAL))  # (1,5)-(3,5) 堵出口
+        b3.add_vehicle(Vehicle(5, "Yellow Car V2", "#f1c40f", 20, 2, Direction.HORIZONTAL))  # (3,2)-(4,2)
+        b3.add_vehicle(Vehicle(6, "Orange Car H2", "#e67e22", 4, 3, Direction.VERTICAL))  # (3,3)-(3,4)
         levels.append(b3)
 
         b4 = Board()
