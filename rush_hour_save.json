@@ -3,29 +3,29 @@
     "0": {
       "best_time": 3.1284197000000002,
       "best_moves": 2,
-      "last_time": 6.9048698,
+      "last_time": 6.089078399999998,
       "last_moves": 2,
       "last_stars": 3
     },
     "1": {
-      "best_time": 4.1842443,
+      "best_time": 3.697789000000002,
       "best_moves": 3,
-      "last_time": 26.44839920000001,
-      "last_moves": 5,
-      "last_stars": 2
+      "last_time": 3.697789000000002,
+      "last_moves": 3,
+      "last_stars": 3
     },
     "2": {
       "best_time": 4.079968000000003,
       "best_moves": 3,
-      "last_time": 82.4128180999999,
+      "last_time": 5.322419199999995,
       "last_moves": 6,
       "last_stars": 2
     },
     "3": {
       "best_time": 1.2868441999999973,
       "best_moves": 1,
-      "last_time": 81.00954880000009,
-      "last_moves": 15,
+      "last_time": 57.379409899999985,
+      "last_moves": 14,
       "last_stars": 2
     }
   },
@@ -44,10 +44,10 @@
     }
   },
   "stats": {
-    "rotation_units": 140,
-    "rotations": 140,
+    "rotation_units": 209,
+    "rotations": 209,
     "snapshots": 7,
-    "hints_used_total": 19,
+    "hints_used_total": 20,
     "levels_cleared": {
       "0": {
         "cleared": true,

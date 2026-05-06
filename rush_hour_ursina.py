@@ -921,6 +921,8 @@ class RushHourUrsina:
         self._set_camera_base()
 
     def load_level(self, idx):
+        if getattr(self, 'hide_end_screen', None):
+            self.hide_end_screen()
         self.current_level_idx = idx
         orig = self.level_data[idx]
         self.board = Board([v.clone() for v in orig.vehicles])
@@ -1370,8 +1372,11 @@ class RushHourUrsina:
             self.status.text = f"{self._stars_text(stars)} Clear!"
             self.status.color = color.rgba(0.78, 0.72, 0.50, 1)
             self._show_toast("Great!", f"{self._stars_text(stars)}  Time {self._format_time(self.level_elapsed)}")
-            next_idx = self.current_level_idx + 1 if self.current_level_idx < len(self.level_data) - 1 else 0
-            invoke(self.load_level, next_idx, delay=0.9)
+            if self.current_level_idx < len(self.level_data) - 1:
+                next_idx = self.current_level_idx + 1
+                invoke(self.load_level, next_idx, delay=0.9)
+            else:
+                invoke(self.show_end_screen, delay=0.9)
 
     def _finish_move_animation(self, v_idx):
         self._move_animating = False
@@ -1422,6 +1427,71 @@ class RushHourUrsina:
                     break
             if all_opt:
                 self._unlock_achievement('perfectionist', 'Perfectionist', 'Clear all levels in optimal moves')
+
+    def hide_end_screen(self):
+        for attr in ('_end_screen_bg', '_end_screen_ui'):
+            ent = getattr(self, attr, None)
+            if ent is not None:
+                destroy(ent)
+                setattr(self, attr, None)
+
+    def show_end_screen(self):
+        self.hide_end_screen()
+        self._end_screen_bg = Button(
+            parent=camera.ui,
+            color=color.rgba(0, 0, 0, 0.75),
+            scale=(2.5, 1.5),
+            z=0.05
+        )
+        self._end_screen_ui = Entity(parent=camera.ui, z=0.04)
+
+        Button(
+            parent=self._end_screen_ui,
+            color=self.ui_bg,
+            scale=(0.6, 0.4),
+            radius=0.1
+        )
+
+        Text(
+            "Congratulations!",
+            parent=self._end_screen_ui,
+            origin=(0, 0),
+            y=0.10,
+            scale=1.8,
+            color=color.rgba(0.46, 0.38, 0.22, 1)
+        )
+        Text(
+            "You have completed all levels.",
+            parent=self._end_screen_ui,
+            origin=(0, 0),
+            y=0.02,
+            scale=1.0,
+            color=self.ui_text
+        )
+
+        btn_play_again = Button(
+            text="Play Again",
+            parent=self._end_screen_ui,
+            scale=(0.25, 0.06),
+            position=(0, -0.08),
+            radius=0.5,
+            color=color.rgba(self.btn_undo.r, self.btn_undo.g, self.btn_undo.b, 1),
+            text_color=color.rgba(0, 0, 0, 0.98)
+        )
+        btn_play_again.highlight_color = btn_play_again.color
+        btn_play_again.pressed_color = btn_play_again.color
+        if getattr(btn_play_again, 'text_entity', None) is not None:
+            btn_play_again.text_entity.enabled = True
+            btn_play_again.text_entity.z = -0.10
+        btn_play_again.z = 0.03
+        self._set_button_label(btn_play_again, "Play Again", scale=0.6)
+
+        def on_play_again():
+            self.hide_end_screen()
+            self._tutorial_active = False
+            self.load_level(0)
+
+        btn_play_again.on_click = on_play_again
 
     def _update(self):
         if self.is_ortho:
