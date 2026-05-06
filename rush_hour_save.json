@@ -3,30 +3,30 @@
     "0": {
       "best_time": 3.1284197000000002,
       "best_moves": 2,
-      "last_time": 3.5969526999999997,
+      "last_time": 6.9048698,
       "last_moves": 2,
       "last_stars": 3
     },
     "1": {
       "best_time": 4.1842443,
       "best_moves": 3,
-      "last_time": 6.3540502,
-      "last_moves": 3,
-      "last_stars": 3
+      "last_time": 26.44839920000001,
+      "last_moves": 5,
+      "last_stars": 2
     },
     "2": {
       "best_time": 4.079968000000003,
       "best_moves": 3,
-      "last_time": 54.85195899999998,
-      "last_moves": 9,
-      "last_stars": 3
+      "last_time": 82.4128180999999,
+      "last_moves": 6,
+      "last_stars": 2
     },
     "3": {
       "best_time": 1.2868441999999973,
       "best_moves": 1,
-      "last_time": 64.63353130000006,
+      "last_time": 81.00954880000009,
       "last_moves": 15,
-      "last_stars": 3
+      "last_stars": 2
     }
   },
   "achievements": {
@@ -38,13 +38,16 @@
     },
     "perfectionist": {
       "unlocked_at": 1778038586.4387312
+    },
+    "explorer": {
+      "unlocked_at": 1778073064.0824208
     }
   },
   "stats": {
-    "rotation_units": 28,
-    "rotations": 28,
+    "rotation_units": 140,
+    "rotations": 140,
     "snapshots": 7,
-    "hints_used_total": 17,
+    "hints_used_total": 19,
     "levels_cleared": {
       "0": {
         "cleared": true,

@@ -298,6 +298,32 @@ class RushHourUrsina:
         self.validation_angle = 0
         self.validation_errors = []
         self.validation_original_angle = 45.0
+        # ====== 开屏界面 ======
+        self.splash_shown = True
+
+        # 全屏半透明遮罩
+        self.splash_overlay = Button(
+            parent=camera.ui, text='',
+            scale=(2.2, 2.2),
+            color=color.rgba(0.08, 0.08, 0.10, 0.92),  # 或你设定的任意颜色
+            radius=0,
+            collider=None  # ← 添加这一行，关闭碰撞检测
+        )
+
+        # 标题
+        self.splash_title = Text("RUSH HOUR 3D", parent=camera.ui, origin=(0,0),
+                                 scale=2.8, y=0.15, color=color.rgba(0.95, 0.85, 0.45, 1))
+
+        # 开始按钮
+        self.splash_btn = Button(
+            text="START", parent=camera.ui,
+            scale=(0.25, 0.08), y=-0.1, radius=0.5,
+            color=color.rgba(0.22, 0.40, 0.30, 0.9),
+            highlight_color=color.rgba(0.28, 0.50, 0.38, 1),
+            pressed_color=color.rgba(0.18, 0.32, 0.24, 1),
+            text_color=color.rgba(1,1,1,0.95),
+            on_click=self._dismiss_splash
+        )
 
         
 
@@ -336,6 +362,32 @@ class RushHourUrsina:
                 winsound.Beep(220, 70)
         except Exception:
             pass
+
+    def _dismiss_splash(self):
+        # 如果已经隐藏，避免重复执行
+        if not getattr(self, 'splash_shown', True):
+            return
+        self.splash_shown = False
+
+        # 所有元素一起淡出
+        self.splash_title.animate('color', color.clear, duration=0.4)
+        self.splash_btn.animate('color', color.clear, duration=0.4)
+        if self.splash_btn.text_entity:
+            self.splash_btn.text_entity.animate('color', color.clear, duration=0.4)
+
+        self.splash_overlay.animate_color(color.clear, duration=0.5, curve=curve.out_quad)
+
+        # 动画结束后销毁
+        invoke(self._remove_splash, delay=0.55)
+
+    def _remove_splash(self):
+        destroy(self.splash_overlay)
+        destroy(self.splash_title)
+        destroy(self.splash_btn)
+        # 可选：清除引用
+        self.splash_overlay = None
+        self.splash_title = None
+        self.splash_btn = None
 
     def _load_save(self):
         try:
