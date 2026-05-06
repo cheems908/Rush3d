@@ -8,7 +8,7 @@ import json
 
 from enum import Enum
 
-from ursina import Ursina, Entity, Text, Button, color, mouse, camera, Vec3, Vec2, destroy, held_keys, time as u_time, load_model, Mesh, invoke, curve, window, application
+from ursina import Ursina, Entity, Text, Button, color, mouse, camera, Vec3, Vec2, destroy, held_keys, time as u_time, load_model, Mesh, invoke, curve, window, application, Sky
 from ursina.shaders import lit_with_shadows_shader, unlit_shader
 from ursina.lights import DirectionalLight, AmbientLight
 
@@ -160,6 +160,7 @@ class RushHourUrsina:
             window.color = color.rgba(0.93, 0.94, 0.95, 1)
         except Exception:
             pass
+        self._setup_camera_background()
 
         self.dev_overlay_enabled = False
         try:
@@ -188,8 +189,9 @@ class RushHourUrsina:
 
         self.rotation_y = 45.0
         self.camera_dist = 15.0
+        self.camera_height = 11.5
 
-        self._camera_base_pos = Vec3(0, 9.0, -self.camera_dist)
+        self._camera_base_pos = Vec3(0, self.camera_height, -self.camera_dist)
         self._camera_shake_t = 0.0
         self._camera_shake_strength = 0.0
         self._camera_shake_until = 0.0
@@ -250,7 +252,7 @@ class RushHourUrsina:
         self._move_anim_duration = 0.12
 
         self.is_ortho = False
-        self._camera_3d_pos = Vec3(0, 9.0, -self.camera_dist)
+        self._camera_3d_pos = Vec3(0, self.camera_height, -self.camera_dist)
         self._camera_3d_rot = Vec3(0, 0, 0)
 
         self.hint_used_this_level = False
@@ -346,7 +348,7 @@ class RushHourUrsina:
         return None
 
     def _set_camera_base(self):
-        self._camera_base_pos = Vec3(0, 9.0, -self.camera_dist)
+        self._camera_base_pos = Vec3(0, self.camera_height, -self.camera_dist)
         camera.position = self._camera_base_pos
         camera.look_at(Vec3(0, 0, 0))
 
@@ -362,6 +364,19 @@ class RushHourUrsina:
                 winsound.Beep(220, 70)
         except Exception:
             pass
+
+    def _setup_camera_background(self):
+        # `background.png` is a 2:1 equirectangular panorama, so `Sky` gives the best result.
+        self.camera_background = Sky(texture='background.png')
+        self.camera_background.collider = None
+        self.camera_background.texture_scale = Vec2(1, -1)
+        self.camera_background.texture_offset = Vec2(0, 1)
+
+    def _sync_camera_background(self):
+        bg = getattr(self, 'camera_background', None)
+        if bg is None:
+            return
+        bg.scale = Vec3(1, 1, 1)
 
     def _dismiss_splash(self):
         # 如果已经隐藏，避免重复执行
@@ -596,8 +611,7 @@ class RushHourUrsina:
 
     def _stars_text(self, count):
         c = max(1, min(3, int(count)))
-        labels = {3: 'Perfect!!!', 2: 'Wonderful!!', 1: 'Good!'}
-        return labels.get(c, 'Good')
+        return f"Stars: {'*' * c}{'-' * (3 - c)}"
 
     def _update_hud(self):
         opt = self.optimal_moves
@@ -923,6 +937,8 @@ class RushHourUrsina:
         self.rotation_y = 45.0
         self.camera_dist = 15.0
         self._set_camera_base()
+        self._camera_3d_pos = Vec3(camera.position)
+        self._camera_3d_rot = Vec3(camera.rotation)
 
     def load_level(self, idx):
         if getattr(self, 'hide_end_screen', None):
@@ -1498,6 +1514,7 @@ class RushHourUrsina:
         btn_play_again.on_click = on_play_again
 
     def _update(self):
+        self._sync_camera_background()
         if self.is_ortho:
             camera.position = (0, self._ortho_height, 0)
             camera.rotation = (90, 0, 0)
@@ -2111,6 +2128,71 @@ class RushHourUrsina:
             self._save()
             if int(stats.get('rotations', 0)) >= 100:
                 self._unlock_achievement('explorer', 'Explorer', 'Rotate the view 100 times')
+
+    def show_end_screen(self):
+        self.hide_end_screen()
+        self._end_screen_bg = Button(
+            parent=camera.ui,
+            color=color.rgba(0, 0, 0, 0.75),
+            scale=(2.5, 1.5),
+            z=0.05
+        )
+        self._end_screen_ui = Entity(parent=camera.ui, z=0.04)
+
+        panel = Button(
+            parent=self._end_screen_ui,
+            color=self.ui_bg,
+            scale=(0.6, 0.4),
+            radius=0.1
+        )
+
+        Text(
+            "Congratulations!",
+            parent=self._end_screen_ui,
+            origin=(0, 0),
+            y=0.10,
+            scale=1.8,
+            color=color.rgba(0.46, 0.38, 0.22, 1)
+        )
+        Text(
+            "You have completed all levels.",
+            parent=self._end_screen_ui,
+            origin=(0, 0),
+            y=0.02,
+            scale=1.0,
+            color=self.ui_text
+        )
+
+        btn_play_again = Button(
+            text="Play Again",
+            parent=self._end_screen_ui,
+            scale=(0.25, 0.06),
+            position=(0, -0.08),
+            radius=0.5,
+            color=color.rgba(self.btn_undo.r, self.btn_undo.g, self.btn_undo.b, 1),
+            text_color=color.rgba(0, 0, 0, 0.98)
+        )
+        btn_play_again.highlight_color = btn_play_again.color
+        btn_play_again.pressed_color = btn_play_again.color
+        if getattr(btn_play_again, 'text_entity', None) is not None:
+            btn_play_again.text_entity.enabled = True
+            btn_play_again.text_entity.z = -0.10
+        btn_play_again.z = 0.03
+        self._set_button_label(btn_play_again, "Play Again", scale=0.6)
+
+        def on_play_again():
+            self.hide_end_screen()
+            self._tutorial_active = False
+            self.load_level(0)
+
+        btn_play_again.on_click = on_play_again
+
+    def hide_end_screen(self):
+        for attr in ('_end_screen_bg', '_end_screen_ui'):
+            ent = getattr(self, attr, None)
+            if ent is not None:
+                destroy(ent)
+                setattr(self, attr, None)
 
     def run(self):
         self.app.run()
