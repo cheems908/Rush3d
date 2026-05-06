@@ -3,22 +3,22 @@
     "0": {
       "best_time": 3.1284197000000002,
       "best_moves": 2,
-      "last_time": 3.1284197000000002,
+      "last_time": 3.3982922999999996,
       "last_moves": 2,
       "last_stars": 3
     },
     "1": {
       "best_time": 4.5135755,
       "best_moves": 3,
-      "last_time": 9.9011919,
+      "last_time": 4.8684534,
       "last_moves": 3,
       "last_stars": 3
     },
     "2": {
       "best_time": 4.079968000000003,
       "best_moves": 3,
-      "last_time": 10.286233300000003,
-      "last_moves": 4,
+      "last_time": 41.1621809,
+      "last_moves": 9,
       "last_stars": 3
     },
     "3": {
@@ -41,10 +41,10 @@
     }
   },
   "stats": {
-    "rotation_units": 12,
-    "rotations": 12,
+    "rotation_units": 16,
+    "rotations": 16,
     "snapshots": 7,
-    "hints_used_total": 12,
+    "hints_used_total": 14,
     "levels_cleared": {
       "0": {
         "cleared": true,
