@@ -149,11 +149,11 @@ class RushHourUrsina:
         self.ui_shadow = color.rgba(0, 0, 0, 0.10)
         self.ui_border = color.rgba(0, 0, 0, 0.06)
 
-        self.btn_undo = color.rgba(0.56, 0.67, 0.78, 0.96)
-        self.btn_reset = color.rgba(0.79, 0.65, 0.54, 0.96)
-        self.btn_hint = color.rgba(0.70, 0.62, 0.78, 0.96)
-        self.btn_validate = color.rgba(0.78, 0.60, 0.62, 0.96)
-        self.btn_neutral = color.rgba(0.74, 0.75, 0.80, 0.92)
+        self.btn_undo = color.rgba(0.18, 0.38, 0.62, 1)
+        self.btn_reset = color.rgba(0.72, 0.38, 0.15, 1)
+        self.btn_hint = color.rgba(0.42, 0.28, 0.60, 1)
+        self.btn_validate = color.rgba(0.65, 0.22, 0.25, 1)
+        self.btn_neutral = color.rgba(0.28, 0.34, 0.44, 1)
 
         camera.clear_color = color.rgba(0.93, 0.94, 0.95, 1)
         try:
@@ -188,9 +188,10 @@ class RushHourUrsina:
         self._set_camera_base()
 
         self._ortho_height = 20.0
-        self._ortho_zoom = 60.0
+        self._ortho_zoom = 1.0
         self._ortho_margin = 1.08
         self._ortho_last_aspect = None
+        self._ortho_film_h = 0.0
 
         self.level_data = self.init_levels()
         self.current_level_idx = 0
@@ -216,8 +217,8 @@ class RushHourUrsina:
         self.metrics = Text("", parent=self.top_ui, origin=(0.5, 0), x=0.43, y=-0.022, scale=0.82, color=self.ui_muted)
         self.metrics.enabled = False
 
-        self.status = Text("Ready", parent=self.bottom_ui, origin=(-0.5, 0), x=-0.43, y=0.120, scale=0.88, color=self.ui_muted)
-        self.help = Text("V: 2D/3D   P: Screenshot   Drag: move/rotate   Wheel: zoom", parent=self.bottom_ui, origin=(0, 0), y=-0.122, scale=0.78, color=self.ui_muted)
+        self.status = Text("Ready", parent=self.bottom_ui, origin=(-0.5, 0), x=-0.43, y=0.120, scale=0.88, color=self.ui_text)
+        self.help = Text("V: Toggle 2D/3D  |  P: Screenshot  |  Drag: Move vehicle  |  Drag bg: Rotate  |  Wheel: Zoom  |  R-click: Rotate", parent=self.bottom_ui, origin=(0, 0), y=-0.122, scale=0.78, color=self.ui_text)
 
         self.floor_tiles = []
         self.tile_by_cell = {}
@@ -406,13 +407,17 @@ class RushHourUrsina:
             aspect = float(window.aspect_ratio)
         except Exception:
             aspect = 16 / 9
-        if (not force) and self._ortho_last_aspect is not None and abs(self._ortho_last_aspect - aspect) < 1e-6:
-            return
+        zoom = float(self._ortho_zoom)
+        if (not force) and self._ortho_last_aspect is not None:
+            if abs(self._ortho_last_aspect - aspect) < 1e-6 and abs(getattr(self, '_ortho_last_zoom', 0.0) - zoom) < 1e-6:
+                return
         self._ortho_last_aspect = aspect
+        self._ortho_last_zoom = zoom
 
         board_size = 6.0
-        film_h = (board_size * self._ortho_margin) / max(0.001, float(self._ortho_zoom))
+        film_h = (board_size * self._ortho_margin) / max(0.001, zoom)
         film_w = film_h * max(0.001, aspect)
+        self._ortho_film_h = film_h
 
         try:
             lens = application.base.cam.node().getLens()
@@ -592,7 +597,7 @@ class RushHourUrsina:
             return
         if key == 'scroll up':
             if self.is_ortho:
-                self._ortho_zoom = min(80.0, self._ortho_zoom * 1.08)
+                self._ortho_zoom = min(15.0, self._ortho_zoom * 1.08)
                 self._apply_ortho_lens(force=True)
             else:
                 self.camera_dist = max(8.0, self.camera_dist - 1.2)
@@ -600,7 +605,7 @@ class RushHourUrsina:
             return
         if key == 'scroll down':
             if self.is_ortho:
-                self._ortho_zoom = max(1.2, self._ortho_zoom / 1.08)
+                self._ortho_zoom = max(0.3, self._ortho_zoom / 1.08)
                 self._apply_ortho_lens(force=True)
             else:
                 self.camera_dist = min(26.0, self.camera_dist + 1.2)
@@ -732,10 +737,10 @@ class RushHourUrsina:
         self.buttons = []
 
         def style_btn(b, base):
-            b.text_color = self.ui_text
-            b.highlight_color = color.rgba(base.r, base.g, base.b, 0.92)
-            b.pressed_color = color.rgba(base.r, base.g, base.b, 1.0)
-            b.color = color.rgba(base.r, base.g, base.b, 0.72)
+            b.text_color = color.rgba(1, 1, 1, 0.95)
+            b.highlight_color = color.rgba(base.r + 0.08, base.g + 0.08, base.b + 0.08, 1)
+            b.pressed_color = color.rgba(base.r - 0.06, base.g - 0.06, base.b - 0.06, 1)
+            b.color = color.rgba(base.r, base.g, base.b, 0.88)
             t = (b.text or '')
             s = 0.82
             if len(t) >= 9:
@@ -759,10 +764,10 @@ class RushHourUrsina:
             ("UNDO", self.undo_move, self.btn_undo, base_w),
             ("RESET", self.reset_level, self.btn_reset, base_w),
             ("HINT", self.show_hint, self.btn_hint, base_w),
-            ("VALIDATE", self.start_validation, self.btn_validate, base_w),
+            ("VERIFY", self.start_validation, self.btn_validate, base_w),
             ("RESET VIEW", self.reset_view, self.btn_neutral, base_w + 0.030),
-            ("2D/3D", self.toggle_view_mode, self.btn_neutral, base_w + 0.010),
-            ("SNAP", self.take_screenshot, self.btn_neutral, base_w),
+            ("2D / 3D", self.toggle_view_mode, self.btn_neutral, base_w + 0.010),
+            ("SCREENSHOT", self.take_screenshot, self.btn_neutral, base_w + 0.032),
         ]
         total_w = sum(w for _, _, _, w in labels) + gap * (len(labels) - 1)
         x = -total_w / 2
@@ -775,7 +780,7 @@ class RushHourUrsina:
         self.level_buttons = []
         for i in range(4):
             b = Button(text=f"LEVEL {i+1}", parent=self.bottom_ui, scale=(0.110, 0.040), position=(-0.205 + i * 0.14, 0.055), radius=0.95)
-            style_btn(b, color.rgba(0.38, 0.52, 0.44, 0.95))
+            style_btn(b, color.rgba(0.20, 0.42, 0.32, 1))
             b.on_click = (lambda idx=i: self.load_level(idx))
             self.level_buttons.append(b)
 
@@ -1270,7 +1275,6 @@ class RushHourUrsina:
         if self.is_ortho:
             camera.position = (0, self._ortho_height, 0)
             camera.rotation = (90, 0, 0)
-            camera.orthographic = True
             self._apply_ortho_lens()
 
             wheel = 0
@@ -1283,9 +1287,9 @@ class RushHourUrsina:
                     break
             if wheel:
                 if wheel > 0:
-                    self._ortho_zoom = min(120.0, self._ortho_zoom * 1.10)
+                    self._ortho_zoom = min(15.0, self._ortho_zoom * 1.10)
                 else:
-                    self._ortho_zoom = max(1.2, self._ortho_zoom / 1.10)
+                    self._ortho_zoom = max(0.3, self._ortho_zoom / 1.10)
                 self._apply_ortho_lens(force=True)
 
         if not self._move_animating:
