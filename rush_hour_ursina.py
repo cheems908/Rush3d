@@ -710,6 +710,9 @@ class RushHourUrsina:
         if key in ('v', 'V'):
             self.toggle_view_mode()
             return
+        if key in ('h', 'H'):  
+            self.show_hint()
+            return
         if key in ('p', 'P'):
             self.take_screenshot()
             return
