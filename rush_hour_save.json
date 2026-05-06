@@ -1,0 +1,67 @@
+{
+  "levels": {
+    "0": {
+      "best_time": 4.384030300000006,
+      "best_moves": 2,
+      "last_time": 4.384030300000006,
+      "last_moves": 2,
+      "last_stars": 3
+    },
+    "1": {
+      "best_time": 7.365925299999998,
+      "best_moves": 4,
+      "last_time": 7.365925299999998,
+      "last_moves": 4,
+      "last_stars": 3
+    },
+    "2": {
+      "best_time": 5.7065137,
+      "best_moves": 3,
+      "last_time": 5.7065137,
+      "last_moves": 3,
+      "last_stars": 3
+    },
+    "3": {
+      "best_time": 3.1903666999999984,
+      "best_moves": 1,
+      "last_time": 3.1903666999999984,
+      "last_moves": 1,
+      "last_stars": 3
+    }
+  },
+  "achievements": {
+    "fast_hand": {
+      "unlocked_at": 1778037602.088007
+    },
+    "no_hints": {
+      "unlocked_at": 1778037606.184883
+    }
+  },
+  "stats": {
+    "rotation_units": 0,
+    "rotations": 0,
+    "snapshots": 0,
+    "hints_used_total": 1,
+    "levels_cleared": {
+      "0": {
+        "cleared": true,
+        "cleared_without_hint": true,
+        "cleared_optimal": true
+      },
+      "1": {
+        "cleared": true,
+        "cleared_without_hint": true
+      },
+      "2": {
+        "cleared": true,
+        "cleared_without_hint": true,
+        "cleared_optimal": true
+      },
+      "3": {
+        "cleared": true,
+        "cleared_without_hint": true,
+        "cleared_optimal": true
+      }
+    }
+  }
+}
