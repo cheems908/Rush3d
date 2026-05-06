@@ -228,11 +228,12 @@ class RushHourUrsina:
         self.highlight_overlays = []
         self.preview_overlays = []
 
-        self.vehicle_obj_model = None
-        self.vehicle_obj_source_len = 1.0
-        self.vehicle_obj_source_min_y = 0.0
+        self.vehicle_models = {
+            2: {'model': None, 'source_len': 1.0, 'source_min_y': 0.0},
+            3: {'model': None, 'source_len': 1.0, 'source_min_y': 0.0},
+        }
         self.vehicle_obj_base_scale = 1.0
-        self._init_vehicle_model()
+        self._init_vehicle_models()
 
         self._select_pulse_speed = 4.0
         self._select_hover_amp = 0.05
@@ -519,68 +520,79 @@ class RushHourUrsina:
         b = max(0.0, min(1.0, c.b * k))
         return color.rgba(r, g, b, 1)
 
-    def _load_vehicle_obj_model(self):
+    def _load_vehicle_models(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         obj_dir = os.path.join(base_dir, 'obj')
+        models = {2: None, 3: None}
         if not os.path.isdir(obj_dir):
-            return None
+            return models
 
-        candidates = ['car1.obj', 'red_car.obj', 'red1.obj']
-        for name in candidates:
-            p = os.path.join(obj_dir, name)
+        def _try_load(filename):
+            p = os.path.join(obj_dir, filename)
             if os.path.exists(p):
                 try:
-                    return load_model(f"obj/{name}")
+                    return load_model(f"obj/{filename}")
                 except Exception:
                     return None
-
-        try:
-            for name in os.listdir(obj_dir):
-                if name.lower().endswith('.obj'):
-                    try:
-                        return load_model(f"obj/{name}")
-                    except Exception:
-                        return None
-        except Exception:
             return None
-        return None
 
-    def _init_vehicle_model(self):
-        m = self._load_vehicle_obj_model()
-        if m is None:
-            self.vehicle_obj_model = None
-            self.vehicle_obj_source_len = 1.0
-            self.vehicle_obj_source_min_y = 0.0
-            return
-        self.vehicle_obj_model = m
-        try:
-            vs = m.vertices
-            xs = [v[0] for v in vs]
-            ys = [v[1] for v in vs]
-            zs = [v[2] for v in vs]
-            x_size = (max(xs) - min(xs)) if xs else 1.0
-            z_size = (max(zs) - min(zs)) if zs else 1.0
-            self.vehicle_obj_source_len = max(0.001, max(x_size, z_size))
-            self.vehicle_obj_source_min_y = min(ys) if ys else 0.0
-        except Exception:
-            self.vehicle_obj_source_len = 1.0
-            self.vehicle_obj_source_min_y = 0.0
+        car = _try_load('car1.obj')
+        if car is not None:
+            models[2] = car
 
-    def _clone_vehicle_mesh(self):
-        m = self.vehicle_obj_model
-        if m is None:
+        truck = _try_load('big_car.obj')
+        if truck is not None:
+            models[3] = truck
+        elif car is not None:
+            models[3] = car
+
+        if models[2] is None and models[3] is None:
+            for name in sorted(os.listdir(obj_dir)):
+                if name.lower().endswith('.obj'):
+                    m = _try_load(name)
+                    if m is not None:
+                        models[2] = m
+                        models[3] = m
+                        break
+        return models
+
+    def _init_vehicle_models(self):
+        loaded = self._load_vehicle_models()
+        for length, m in loaded.items():
+            entry = self.vehicle_models[length]
+            if m is None:
+                entry['model'] = None
+                entry['source_len'] = 1.0
+                entry['source_min_y'] = 0.0
+                continue
+            entry['model'] = m
+            try:
+                vs = m.vertices
+                xs = [v[0] for v in vs]
+                ys = [v[1] for v in vs]
+                zs = [v[2] for v in vs]
+                x_size = (max(xs) - min(xs)) if xs else 1.0
+                z_size = (max(zs) - min(zs)) if zs else 1.0
+                entry['source_len'] = max(0.001, max(x_size, z_size))
+                entry['source_min_y'] = min(ys) if ys else 0.0
+            except Exception:
+                entry['source_len'] = 1.0
+                entry['source_min_y'] = 0.0
+
+    def _clone_vehicle_mesh(self, model):
+        if model is None:
             return None
         try:
             return Mesh(
-                vertices=list(getattr(m, 'vertices', []) or []),
-                triangles=list(getattr(m, 'triangles', []) or []),
-                uvs=list(getattr(m, 'uvs', []) or []),
-                normals=list(getattr(m, 'normals', []) or []),
-                colors=list(getattr(m, 'colors', []) or []),
-                mode=getattr(m, 'mode', 'triangle'),
+                vertices=list(getattr(model, 'vertices', []) or []),
+                triangles=list(getattr(model, 'triangles', []) or []),
+                uvs=list(getattr(model, 'uvs', []) or []),
+                normals=list(getattr(model, 'normals', []) or []),
+                colors=list(getattr(model, 'colors', []) or []),
+                mode=getattr(model, 'mode', 'triangle'),
             )
         except Exception:
-            return m
+            return model
 
     def _input(self, key):
         if self._move_animating:
@@ -927,7 +939,12 @@ class RushHourUrsina:
         collider_ent.vehicle_idx = idx
         ent.collider_ent = collider_ent
 
-        if self.vehicle_obj_model is None:
+        model_info = self.vehicle_models.get(v.length, {'model': None, 'source_len': 1.0, 'source_min_y': 0.0})
+        obj_model = model_info['model']
+        source_len = model_info['source_len']
+        source_min_y = model_info['source_min_y']
+
+        if obj_model is None:
             visual = Entity(
                 parent=ent,
                 model='cube',
@@ -940,14 +957,14 @@ class RushHourUrsina:
             return ent
 
         desired_len = 0.98 * float(v.length)
-        s = self.vehicle_obj_base_scale * (desired_len / self.vehicle_obj_source_len)
+        s = self.vehicle_obj_base_scale * (desired_len / source_len)
 
-        visual_mesh = self._clone_vehicle_mesh()
+        visual_mesh = self._clone_vehicle_mesh(obj_model)
         visual = Entity(parent=ent, model=(visual_mesh if visual_mesh is not None else 'cube'), shader=lit_with_shadows_shader, color=base)
         visual.vehicle_idx = idx
         visual.rotation_y = 90 if v.direction == Direction.VERTICAL else 0
         visual.scale = Vec3(s, s, s)
-        visual.y = (-self.vehicle_obj_source_min_y * s) + 0.03
+        visual.y = (-source_min_y * s) + 0.03
         ent.visual = visual
         return ent
 
@@ -970,12 +987,13 @@ class RushHourUrsina:
             else:
                 visual.color = base
                 visual._rest_color = base
-                if getattr(visual, 'model', None) != 'cube' and self.vehicle_obj_model is not None:
+                if getattr(visual, 'model', None) != 'cube' and self.vehicle_models.get(v.length, {}).get('model') is not None:
+                    model_info = self.vehicle_models[v.length]
                     desired_len = 0.98 * float(v.length)
-                    s = self.vehicle_obj_base_scale * (desired_len / self.vehicle_obj_source_len)
+                    s = self.vehicle_obj_base_scale * (desired_len / model_info['source_len'])
                     visual.rotation_y = 90 if v.direction == Direction.VERTICAL else 0
                     visual.scale = Vec3(s, s, s)
-                    visual.y = (-self.vehicle_obj_source_min_y * s) + 0.03
+                    visual.y = (-model_info['source_min_y'] * s) + 0.03
                 visual._rest_y = float(getattr(visual, 'y', 0.0))
 
         self._update_hud()
