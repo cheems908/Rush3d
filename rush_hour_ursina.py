@@ -745,16 +745,12 @@ class RushHourUrsina:
         self.buttons = []
 
         def style_btn(b, base):
-            b.text_color = color.rgba(1, 1, 1, 0.95)
+            b.text_color = color.rgba(0, 0, 0, 0.95)
             b.highlight_color = color.rgba(base.r + 0.08, base.g + 0.08, base.b + 0.08, 1)
             b.pressed_color = color.rgba(base.r - 0.06, base.g - 0.06, base.b - 0.06, 1)
             b.color = color.rgba(base.r, base.g, base.b, 0.88)
             t = (b.text or '')
-            s = 0.82
-            if len(t) >= 9:
-                s = 0.68
-            if len(t) >= 11:
-                s = 0.62
+            s = 0.5
             b.text_entity.scale = s
             return b
 
@@ -774,8 +770,8 @@ class RushHourUrsina:
             ("HINT", self.show_hint, self.btn_hint, base_w),
             ("VERIFY", self.start_validation, self.btn_validate, base_w),
             ("RESET VIEW", self.reset_view, self.btn_neutral, base_w + 0.030),
-            ("2D / 3D", self.toggle_view_mode, self.btn_neutral, base_w + 0.010),
-            ("SCREENSHOT", self.take_screenshot, self.btn_neutral, base_w + 0.032),
+            ("2D/3D", self.toggle_view_mode, self.btn_neutral, base_w + 0.010),
+            # ("SCREENSHOT", self.take_screenshot, self.btn_neutral, base_w + 0.032),
         ]
         total_w = sum(w for _, _, _, w in labels) + gap * (len(labels) - 1)
         x = -total_w / 2

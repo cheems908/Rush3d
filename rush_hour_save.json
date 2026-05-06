@@ -3,14 +3,14 @@
     "0": {
       "best_time": 3.1284197000000002,
       "best_moves": 2,
-      "last_time": 3.8492452999999998,
+      "last_time": 7.9559261999999995,
       "last_moves": 2,
       "last_stars": 3
     },
     "1": {
       "best_time": 4.1842443,
       "best_moves": 3,
-      "last_time": 4.1842443,
+      "last_time": 4.4313576,
       "last_moves": 3,
       "last_stars": 3
     },
@@ -41,8 +41,8 @@
     }
   },
   "stats": {
-    "rotation_units": 20,
-    "rotations": 20,
+    "rotation_units": 25,
+    "rotations": 25,
     "snapshots": 7,
     "hints_used_total": 14,
     "levels_cleared": {
