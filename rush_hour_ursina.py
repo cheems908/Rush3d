@@ -143,6 +143,17 @@ def hex_to_ursina_color(hex_color: str):
 class RushHourUrsina:
     def __init__(self):
         self.app = Ursina(borderless=False)
+
+        # Add project directories to Panda3D model path for font/asset loading
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            from panda3d.core import getModelPath
+            getModelPath().prependDirectory(base_dir)
+            getModelPath().prependDirectory(os.path.join(base_dir, 'sans'))
+            getModelPath().prependDirectory(os.path.join(base_dir, 'fonts'))
+        except Exception:
+            pass
+
         self._cjk_font = self._ensure_cjk_font()
         if self._cjk_font:
             try:
@@ -150,17 +161,17 @@ class RushHourUrsina:
             except Exception:
                 pass
 
-        self.ui_bg = color.rgba(0.96, 0.97, 0.98, 0.78)
-        self.ui_text = color.rgba(0.14, 0.14, 0.16, 1)
-        self.ui_muted = color.rgba(0.30, 0.30, 0.34, 1)
+        self.ui_bg = color.rgba(0.96, 0.96, 0.98, 0.80)
+        self.ui_text = color.rgba(0.10, 0.10, 0.18, 1)
+        self.ui_muted = color.rgba(0.34, 0.30, 0.42, 1)
         self.ui_shadow = color.rgba(0, 0, 0, 0.10)
         self.ui_border = color.rgba(0, 0, 0, 0.06)
 
-        self.btn_undo = color.rgba(0.18, 0.38, 0.62, 1)
-        self.btn_reset = color.rgba(0.72, 0.38, 0.15, 1)
-        self.btn_hint = color.rgba(0.42, 0.28, 0.60, 1)
-        self.btn_validate = color.rgba(0.65, 0.22, 0.25, 1)
-        self.btn_neutral = color.rgba(0.28, 0.34, 0.44, 1)
+        self.btn_undo = color.rgba(0.16, 0.48, 0.80, 1)
+        self.btn_reset = color.rgba(0.88, 0.44, 0.15, 1)
+        self.btn_hint = color.rgba(0.55, 0.32, 0.72, 1)
+        self.btn_validate = color.rgba(0.82, 0.20, 0.22, 1)
+        self.btn_neutral = color.rgba(0.22, 0.42, 0.58, 1)
 
         camera.clear_color = color.rgba(0.93, 0.94, 0.95, 1)
         try:
@@ -185,7 +196,7 @@ class RushHourUrsina:
         self.top_ui = Entity(parent=camera.ui, position=(0.67, 0.30))
         self.bottom_ui = Entity(parent=camera.ui, position=(-0.74, 0.00))
 
-        self.title_text = Text("Rush Hour", parent=self.top_ui, origin=(-0.5, 0), x=-0.17, y=0.10, scale=1.20, color=color.rgba(0.46, 0.38, 0.22, 1))
+        self.title_text = Text("Rush Hour", parent=self.top_ui, origin=(-0.5, 0), x=-0.17, y=0.10, scale=1.20, color=color.rgba(0.82, 0.62, 0.15, 1))
 
         AmbientLight(color=color.rgba(0.35, 0.35, 0.4, 1))
         DirectionalLight(direction=Vec3(1, -2, 1), color=color.rgba(0.9, 0.9, 0.9, 1))
@@ -392,6 +403,15 @@ class RushHourUrsina:
             self._bgm = None
 
     def _find_cjk_font(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        local_candidates = [
+            os.path.join(base_dir, 'sans', 'SmileySans-Oblique.otf'),
+            os.path.join(base_dir, 'sans', 'SmileySans-Oblique.ttf'),
+        ]
+        for p in local_candidates:
+            if p and os.path.exists(p):
+                return p
+
         windir = os.environ.get('WINDIR', r'C:\Windows')
         fonts_dir = os.path.join(windir, 'Fonts')
         candidates = [
@@ -411,14 +431,26 @@ class RushHourUrsina:
                 pass
         return None
 
+    def _to_panda_path(self, path):
+        try:
+            from panda3d.core import Filename
+            return str(Filename.fromOsSpecific(path))
+        except Exception:
+            return path.replace('\\', '/')
+
     def _ensure_cjk_font(self):
         src = self._find_cjk_font()
         if not src:
             return None
+        # If the font is in our local project, convert to Panda3D path and return
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        if os.path.abspath(src).startswith(os.path.abspath(base_dir)):
+            return self._to_panda_path(os.path.abspath(src))
+
         try:
             dst_dir = application.fonts_folder
         except Exception:
-            dst_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts')
+            dst_dir = os.path.join(base_dir, 'fonts')
         try:
             os.makedirs(dst_dir, exist_ok=True)
         except Exception:
@@ -428,7 +460,7 @@ class RushHourUrsina:
             dst_path = os.path.join(dst_dir, dst_name)
             if not os.path.exists(dst_path):
                 shutil.copyfile(src, dst_path)
-            return dst_name
+            return self._to_panda_path(dst_path)
         except Exception:
             return None
 
@@ -549,7 +581,7 @@ class RushHourUrsina:
             origin=(0, 0),
             y=0.30,
             scale=6.4,
-            color=color.rgba(0.98, 0.95, 0.88, 1),
+            color=color.rgba(1.0, 0.88, 0.25, 1),
         )
         title.z = -0.06
 
@@ -1132,7 +1164,7 @@ class RushHourUrsina:
             if hovered is not None and hasattr(hovered, 'vehicle_idx'):
                 self.selected_vehicle_idx = hovered.vehicle_idx
                 self.status.text = f"Selected {self.board.vehicles[self.selected_vehicle_idx].name}"
-                self.status.color = color.rgba(0.62, 0.78, 0.70, 1)
+                self.status.color = color.rgba(0.28, 0.82, 0.52, 1)
                 self._sync_vehicle_entities()
                 self._update_move_range_highlight()
                 self._beep('select')
@@ -1368,7 +1400,7 @@ class RushHourUrsina:
         self.validation_errors = []
         self.validation_original_angle = self.rotation_y
         self.status.text = "Running 360° Geometry Sweep..."
-        self.status.color = color.rgba(0.78, 0.72, 0.50, 1)
+        self.status.color = color.rgba(0.95, 0.72, 0.15, 1)
 
     def calculate_geometry_error(self):
         if not self.board.vehicles:
@@ -1665,7 +1697,7 @@ class RushHourUrsina:
             if clicked_vehicle_idx is not None:
                 self.selected_vehicle_idx = clicked_vehicle_idx
                 self.status.text = f"Selected {self.board.vehicles[clicked_vehicle_idx].name}"
-                self.status.color = color.rgba(0.62, 0.78, 0.70, 1)
+                self.status.color = color.rgba(0.28, 0.82, 0.52, 1)
                 self._sync_vehicle_entities()
             return
 
@@ -1756,7 +1788,7 @@ class RushHourUrsina:
             stars = self._stars_for_moves(self.moves_count, self.optimal_moves, self.level_elapsed)
             self._record_result(stars)
             self.status.text = f"{self._stars_text(stars)} Clear!"
-            self.status.color = color.rgba(0.78, 0.72, 0.50, 1)
+            self.status.color = color.rgba(0.95, 0.72, 0.15, 1)
             self._show_toast("Great!", f"{self._stars_text(stars)}  Time {self._format_time(self.level_elapsed)}")
             win_sound = None
             try:
@@ -1851,7 +1883,7 @@ class RushHourUrsina:
             origin=(0, 0),
             y=0.10,
             scale=1.9,
-            color=color.rgba(0.46, 0.38, 0.22, 1)
+            color=color.rgba(0.88, 0.62, 0.12, 1)
         )
         Text(
             "你已完成全部关卡。",
@@ -1925,7 +1957,7 @@ class RushHourUrsina:
                 self.validation_active = False
                 if max_err < 0.001:
                     self.status.text = f"Validation Passed | Max Deviation: {max_err:.8f}"
-                    self.status.color = color.rgba(0.62, 0.78, 0.70, 1)
+                    self.status.color = color.rgba(0.28, 0.82, 0.52, 1)
                 else:
                     self.status.text = f"Validation Failed | Max Deviation: {max_err:.8f}"
                     self.status.color = self.btn_validate
@@ -2520,7 +2552,7 @@ class RushHourUrsina:
             origin=(0, 0),
             y=0.10,
             scale=1.9,
-            color=color.rgba(0.46, 0.38, 0.22, 1)
+            color=color.rgba(0.88, 0.62, 0.12, 1)
         )
         Text(
             "你已完成全部关卡。",
