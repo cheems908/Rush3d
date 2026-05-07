@@ -1111,7 +1111,7 @@ class RushHourUrsina:
             )
         except Exception:
             return model
-
+#
     def _input(self, key):
         if self._is_game_frozen():
             return
@@ -1222,6 +1222,7 @@ class RushHourUrsina:
             self.selected_vehicle_idx = None
             self._sync_vehicle_entities()
             return
+        #
 
     def init_levels(self):
         levels = []
@@ -2555,7 +2556,7 @@ class RushHourUrsina:
             color=color.rgba(0.88, 0.62, 0.12, 1)
         )
         Text(
-            "你已完成全部关卡。",
+            "finish the game！",
             parent=self._end_screen_ui,
             origin=(0, 0),
             y=0.02,
@@ -2563,18 +2564,18 @@ class RushHourUrsina:
             color=self.ui_text
         )
 
-        btn_again = Button(parent=self._end_screen_ui, text='再玩一遍', scale=(0.20, 0.055), x=-0.22, y=-0.10, radius=0.95)
-        self._style_capsule_button(btn_again, color.rgba(0.20, 0.46, 0.30, 0.70), "再玩一遍", label_scale=0.62)
+        btn_again = Button(parent=self._end_screen_ui, text='Play Again', scale=(0.20, 0.055), x=-0.22, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_again, color.rgba(0.20, 0.46, 0.30, 0.70), "Play Again", label_scale=0.62)
         btn_again.z = 0.03
         btn_again.on_click = self._sfx_callback(lambda: (self.hide_end_screen(), setattr(self, 'splash_shown', False), self._set_game_visibility(True), self.load_level(0)))
 
-        btn_menu = Button(parent=self._end_screen_ui, text='返回主界面', scale=(0.22, 0.055), x=0.00, y=-0.10, radius=0.95)
-        self._style_capsule_button(btn_menu, color.rgba(0.22, 0.30, 0.40, 0.65), "返回主界面", label_scale=0.56)
+        btn_menu = Button(parent=self._end_screen_ui, text='Back to Menu', scale=(0.22, 0.055), x=0.00, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_menu, color.rgba(0.22, 0.30, 0.40, 0.65), "Back to Menu", label_scale=0.56)
         btn_menu.z = 0.03
         btn_menu.on_click = self._sfx_callback(lambda: (self.hide_end_screen(), self._back_to_start_screen()))
 
-        btn_exit = Button(parent=self._end_screen_ui, text='离开', scale=(0.20, 0.055), x=0.22, y=-0.10, radius=0.95)
-        self._style_capsule_button(btn_exit, color.rgba(0.30, 0.22, 0.22, 0.60), "离开", label_scale=0.62)
+        btn_exit = Button(parent=self._end_screen_ui, text='Exit', scale=(0.20, 0.055), x=0.22, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_exit, color.rgba(0.30, 0.22, 0.22, 0.60), "Exit", label_scale=0.62)
         btn_exit.z = 0.03
         btn_exit.on_click = self._sfx_callback(application.quit)
 
@@ -2591,7 +2592,7 @@ class RushHourUrsina:
 
 if __name__ == '__main__':
     _game = RushHourUrsina()
-    _game._fatal_error = False
+    # _game._fatal_error = False
 
     def update():
         if getattr(_game, '_fatal_error', False):
@@ -2599,7 +2600,7 @@ if __name__ == '__main__':
         try:
             _game._update()
         except Exception as e:
-            _game._fatal_error = True
+           # _game._fatal_error = True
             _game.status.text = f"Error: {type(e).__name__}"
             _game.status.color = color.red
             traceback.print_exc()
@@ -2610,7 +2611,7 @@ if __name__ == '__main__':
         try:
             _game._input(key)
         except Exception as e:
-            _game._fatal_error = True
+            # _game._fatal_error = True
             _game.status.text = f"Error: {type(e).__name__}"
             _game.status.color = color.red
             traceback.print_exc()
