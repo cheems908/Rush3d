@@ -695,11 +695,7 @@ class RushHourUrsina:
                         b.disabled = True
                     idx += 1
 
-            btn_back = Button(parent=root, text='Back', scale=(0.26, 0.075), x=-0.18, y=-0.25, radius=0.95)
-            self._style_capsule_button(btn_back, color.rgba(0.22, 0.30, 0.40, 0.65), "Back", label_scale=1.40)
-            btn_back.on_click = self._sfx_callback(self._back_to_start_screen)
-
-            btn_close = Button(parent=root, text='Close', scale=(0.26, 0.075), x=0.18, y=-0.25, radius=0.95)
+            btn_close = Button(parent=root, text='Close', scale=(0.26, 0.075), x=0.00, y=-0.25, radius=0.95)
             self._style_capsule_button(btn_close, color.rgba(0.30, 0.22, 0.22, 0.60), "Close", label_scale=1.40)
             btn_close.on_click = self._sfx_callback(self._hide_modals)
             overlay.on_click = self._sfx_callback(self._hide_modals)
@@ -1855,20 +1851,49 @@ class RushHourUrsina:
                 self._unlock_achievement('perfectionist', 'Perfectionist', 'Clear all levels in optimal moves')
 
     def hide_end_screen(self):
-        for attr in ('_end_screen_bg', '_end_screen_ui'):
+        for attr in ('_end_screen_bg', '_end_screen_shade', '_end_screen_ui'):
             ent = getattr(self, attr, None)
             if ent is not None:
                 destroy(ent)
                 setattr(self, attr, None)
+        if getattr(self, '_game_visible', False):
+            for attr in ('top_panel', 'bottom_panel', 'top_ui', 'bottom_ui'):
+                ent = getattr(self, attr, None)
+                if ent is not None:
+                    ent.enabled = True
+                    border = getattr(ent, '_border', None)
+                    if border is not None:
+                        border.enabled = True
 
     def show_end_screen(self):
         self.hide_end_screen()
-        self._end_screen_bg = Button(
+        self._ensure_blurred_start_background()
+        bg_texture = getattr(self, '_start_bg_texture', 'start.jpg')
+        self._end_screen_bg = Entity(
             parent=camera.ui,
-            color=color.rgba(0, 0, 0, 0.75),
-            scale=(2.5, 1.5),
+            model='quad',
+            texture=bg_texture,
+            shader=unlit_shader,
+            scale=(2.1, 2.1),
+            color=color.white,
+            z=0.06
+        )
+        self._end_screen_shade = Entity(
+            parent=camera.ui,
+            model='quad',
+            shader=unlit_shader,
+            scale=(2.1, 2.1),
+            color=color.rgba(0, 0, 0, 0.38),
             z=0.05
         )
+        for attr in ('top_panel', 'bottom_panel', 'top_ui', 'bottom_ui'):
+            ent = getattr(self, attr, None)
+            if ent is not None:
+                ent.enabled = False
+                border = getattr(ent, '_border', None)
+                if border is not None:
+                    border.enabled = False
+
         self._end_screen_ui = Entity(parent=camera.ui, z=0.04)
 
         Button(
@@ -2532,12 +2557,33 @@ class RushHourUrsina:
 
     def show_end_screen(self):
         self.hide_end_screen()
-        self._end_screen_bg = Button(
+        self._ensure_blurred_start_background()
+        bg_texture = getattr(self, '_start_bg_texture', 'start.jpg')
+        self._end_screen_bg = Entity(
             parent=camera.ui,
-            color=color.rgba(0, 0, 0, 0.75),
-            scale=(2.5, 1.5),
+            model='quad',
+            texture=bg_texture,
+            shader=unlit_shader,
+            scale=(2.1, 2.1),
+            color=color.white,
+            z=0.06
+        )
+        self._end_screen_shade = Entity(
+            parent=camera.ui,
+            model='quad',
+            shader=unlit_shader,
+            scale=(2.1, 2.1),
+            color=color.rgba(0, 0, 0, 0.38),
             z=0.05
         )
+        for attr in ('top_panel', 'bottom_panel', 'top_ui', 'bottom_ui'):
+            ent = getattr(self, attr, None)
+            if ent is not None:
+                ent.enabled = False
+                border = getattr(ent, '_border', None)
+                if border is not None:
+                    border.enabled = False
+
         self._end_screen_ui = Entity(parent=camera.ui, z=0.04)
 
         panel = Button(
@@ -2580,11 +2626,19 @@ class RushHourUrsina:
         btn_exit.on_click = self._sfx_callback(application.quit)
 
     def hide_end_screen(self):
-        for attr in ('_end_screen_bg', '_end_screen_ui'):
+        for attr in ('_end_screen_bg', '_end_screen_shade', '_end_screen_ui'):
             ent = getattr(self, attr, None)
             if ent is not None:
                 destroy(ent)
                 setattr(self, attr, None)
+        if getattr(self, '_game_visible', False):
+            for attr in ('top_panel', 'bottom_panel', 'top_ui', 'bottom_ui'):
+                ent = getattr(self, attr, None)
+                if ent is not None:
+                    ent.enabled = True
+                    border = getattr(ent, '_border', None)
+                    if border is not None:
+                        border.enabled = True
 
     def run(self):
         self.app.run()
