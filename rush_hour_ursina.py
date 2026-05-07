@@ -5,10 +5,11 @@ import traceback
 import os
 import random
 import json
+import shutil
 
 from enum import Enum
 
-from ursina import Ursina, Entity, Text, Button, color, mouse, camera, Vec3, Vec2, destroy, held_keys, time as u_time, load_model, Mesh, invoke, curve, window, application, Sky
+from ursina import Ursina, Entity, Text, Button, color, mouse, camera, Vec3, Vec2, destroy, held_keys, time as u_time, load_model, Mesh, invoke, curve, window, application, Sky, Audio
 from ursina.shaders import lit_with_shadows_shader, unlit_shader
 from ursina.lights import DirectionalLight, AmbientLight
 
@@ -142,6 +143,12 @@ def hex_to_ursina_color(hex_color: str):
 class RushHourUrsina:
     def __init__(self):
         self.app = Ursina(borderless=False)
+        self._cjk_font = self._ensure_cjk_font()
+        if self._cjk_font:
+            try:
+                Text.default_font = self._cjk_font
+            except Exception:
+                pass
 
         self.ui_bg = color.rgba(0.96, 0.97, 0.98, 0.78)
         self.ui_text = color.rgba(0.14, 0.14, 0.16, 1)
@@ -292,6 +299,7 @@ class RushHourUrsina:
 
         self._build_ui_buttons()
         self.load_level(0)
+        self._tutorial_stop(mark_seen=False)
 
         self.last_render_ms = 0.0
         self._render_timer = 0.0
@@ -300,32 +308,21 @@ class RushHourUrsina:
         self.validation_angle = 0
         self.validation_errors = []
         self.validation_original_angle = 45.0
-        # ====== 开屏界面 ======
         self.splash_shown = True
-
-        # 全屏半透明遮罩
-        self.splash_overlay = Button(
-            parent=camera.ui, text='',
-            scale=(2.2, 2.2),
-            color=color.rgba(0.08, 0.08, 0.10, 0.92),  # 或你设定的任意颜色
-            radius=0,
-            collider=None  # ← 添加这一行，关闭碰撞检测
-        )
-
-        # 标题
-        self.splash_title = Text("RUSH HOUR 3D", parent=camera.ui, origin=(0,0),
-                                 scale=2.8, y=0.15, color=color.rgba(0.95, 0.85, 0.45, 1))
-
-        # 开始按钮
-        self.splash_btn = Button(
-            text="START", parent=camera.ui,
-            scale=(0.25, 0.08), y=-0.1, radius=0.5,
-            color=color.rgba(0.22, 0.40, 0.30, 0.9),
-            highlight_color=color.rgba(0.28, 0.50, 0.38, 1),
-            pressed_color=color.rgba(0.18, 0.32, 0.24, 1),
-            text_color=color.rgba(1,1,1,0.95),
-            on_click=self._dismiss_splash
-        )
+        self._game_visible = True
+        self._ui_modal_open = False
+        self._ui_modal_root = None
+        self._info_modal_root = None
+        self._level_select_root = None
+        self.start_screen_root = None
+        self.splash_overlay = None
+        self.splash_title = None
+        self.splash_btn = None
+        self.splash_exit_btn = None
+        self.splash_info_btn = None
+        self._start_bg_texture = 'start.jpg'
+        self._set_game_visibility(False)
+        self._build_start_screen()
 
         
 
@@ -365,6 +362,76 @@ class RushHourUrsina:
         except Exception:
             pass
 
+    def _play_button_sound(self):
+        try:
+            Audio('music/button_sound.mp3', loop=False, autoplay=True)
+        except Exception:
+            pass
+
+    def _sfx_callback(self, callback):
+        def handler(*args, **kwargs):
+            self._play_button_sound()
+            if callable(callback):
+                return callback(*args, **kwargs)
+        return handler
+
+    def _stop_bgm(self):
+        bgm = getattr(self, '_bgm', None)
+        if bgm is not None:
+            try:
+                bgm.stop()
+            except Exception:
+                pass
+            self._bgm = None
+
+    def _start_bgm(self, path):
+        self._stop_bgm()
+        try:
+            self._bgm = Audio(path, loop=True, autoplay=True)
+        except Exception:
+            self._bgm = None
+
+    def _find_cjk_font(self):
+        windir = os.environ.get('WINDIR', r'C:\Windows')
+        fonts_dir = os.path.join(windir, 'Fonts')
+        candidates = [
+            os.path.join(fonts_dir, 'simhei.ttf'),
+            os.path.join(fonts_dir, 'msyh.ttf'),
+            os.path.join(fonts_dir, 'msyhbd.ttf'),
+            os.path.join(fonts_dir, 'simsun.ttf'),
+            os.path.join(fonts_dir, 'NotoSansCJKsc-Regular.otf'),
+        ]
+        for p in candidates:
+            try:
+                if str(p).lower().endswith('.ttc'):
+                    continue
+                if p and os.path.exists(p):
+                    return p
+            except Exception:
+                pass
+        return None
+
+    def _ensure_cjk_font(self):
+        src = self._find_cjk_font()
+        if not src:
+            return None
+        try:
+            dst_dir = application.fonts_folder
+        except Exception:
+            dst_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts')
+        try:
+            os.makedirs(dst_dir, exist_ok=True)
+        except Exception:
+            return None
+        try:
+            dst_name = os.path.basename(src)
+            dst_path = os.path.join(dst_dir, dst_name)
+            if not os.path.exists(dst_path):
+                shutil.copyfile(src, dst_path)
+            return dst_name
+        except Exception:
+            return None
+
     def _setup_camera_background(self):
         # `background.png` is a 2:1 equirectangular panorama, so `Sky` gives the best result.
         self.camera_background = Sky(texture='background.png')
@@ -377,32 +444,326 @@ class RushHourUrsina:
         if bg is None:
             return
         bg.scale = Vec3(1, 1, 1)
+        rotation_y = float(getattr(self, 'rotation_y', 0.0))
+        bg.texture_offset = Vec2((rotation_y / 360.0) % 1.0, 1.0)
+
+    def _is_game_frozen(self):
+        return bool(getattr(self, 'splash_shown', False) or getattr(self, '_ui_modal_open', False))
+
+    def _is_level_unlocked(self, idx):
+        try:
+            idx = int(idx)
+        except Exception:
+            idx = 0
+        if idx <= 0:
+            return True
+        cleared = self._save_data.get('stats', {}).get('levels_cleared', {})
+        prev = cleared.get(str(idx - 1), {})
+        return bool(prev.get('cleared'))
+
+    def _set_game_visibility(self, visible):
+        visible = bool(visible)
+        self._game_visible = visible
+
+        for attr in ('pivot', 'top_panel', 'bottom_panel', 'top_ui', 'bottom_ui'):
+            entity = getattr(self, attr, None)
+            if entity is not None:
+                entity.enabled = visible
+
+        for panel_attr in ('top_panel', 'bottom_panel'):
+            panel = getattr(self, panel_attr, None)
+            border = getattr(panel, '_border', None) if panel is not None else None
+            if border is not None:
+                border.enabled = visible
+
+        if not visible:
+            self.drag_mode = None
+            self.drag_vehicle_idx = None
+            self.drag_start_pos = None
+            self.drag_preview_pos = None
+            self.is_rotating = False
+
+    def _ensure_blurred_start_background(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        src = os.path.join(base_dir, 'start.jpg')
+        blur_radius = 2.6
+        dst = os.path.join(base_dir, 'start_blur_r26.png')
+        if not os.path.exists(src):
+            self._start_bg_texture = 'start.jpg'
+            return
+        if os.path.exists(dst):
+            self._start_bg_texture = 'start_blur_r26.png'
+            return
+        try:
+            from PIL import Image, ImageFilter
+            with Image.open(src) as img:
+                blurred = img.convert('RGBA').filter(ImageFilter.GaussianBlur(radius=blur_radius))
+                blurred.save(dst)
+            self._start_bg_texture = 'start_blur_r26.png'
+        except Exception:
+            self._start_bg_texture = 'start.jpg'
+
+    def _style_capsule_button(self, button, bg_color, label_text, label_scale=0.72):
+        c = color.rgba(bg_color.r, bg_color.g, bg_color.b, bg_color.a)
+        button.radius = 0.95
+        button.color = c
+        button.highlight_color = c
+        button.pressed_color = c
+        button.text_color = color.rgba(0.98, 0.98, 0.98, 1)
+        if getattr(button, 'text_entity', None) is not None:
+            button.text_entity.enabled = True
+            button.text_entity.z = -0.10
+        self._set_button_label(button, label_text, scale=label_scale)
+        return button
+
+    def _build_start_screen(self):
+        self._start_bgm('music/bgm1.mp3')
+        self._remove_splash()
+        self._ensure_blurred_start_background()
+
+        root = Entity(parent=camera.ui, z=0.0)
+        bg = Entity(
+            parent=root,
+            model='quad',
+            texture=getattr(self, '_start_bg_texture', 'start.jpg'),
+            shader=unlit_shader,
+            scale=(2.1, 2.1),
+            color=color.white,
+            z=0.50,
+        )
+        bg.collider = None
+
+        shade = Entity(
+            parent=root,
+            model='quad',
+            shader=unlit_shader,
+            scale=(2.1, 2.1),
+            color=color.rgba(0, 0, 0, 0.18),
+            z=0.48,
+        )
+        shade.collider = None
+
+        title = Text(
+            "RUSH HOUR",
+            parent=root,
+            origin=(0, 0),
+            y=0.30,
+            scale=6.4,
+            color=color.rgba(0.98, 0.95, 0.88, 1),
+        )
+        title.z = -0.06
+
+        btn_start = Button(parent=root, text='Start', scale=(0.46, 0.11), y=-0.08, radius=0.95, z=-0.03)
+        self._style_capsule_button(btn_start, color.rgba(0.20, 0.46, 0.30, 0.72), "Start", label_scale=1.48)
+        btn_start.on_click = self._sfx_callback(self._show_level_select)
+
+        btn_info = Button(parent=root, text='Game Info', scale=(0.46, 0.10), y=-0.22, radius=0.95, z=-0.03)
+        self._style_capsule_button(btn_info, color.rgba(0.22, 0.30, 0.40, 0.66), "Game Info", label_scale=1.24)
+        btn_info.on_click = self._sfx_callback(self._show_info_modal)
+
+        btn_exit = Button(parent=root, text='Exit', scale=(0.46, 0.10), y=-0.34, radius=0.95, z=-0.03)
+        self._style_capsule_button(btn_exit, color.rgba(0.30, 0.22, 0.22, 0.66), "Exit", label_scale=1.48)
+        btn_exit.on_click = self._sfx_callback(application.quit)
+
+        self.start_screen_root = root
+        self.splash_overlay = bg
+        self._splash_shade = shade
+        self.splash_title = title
+        self.splash_btn = btn_start
+        self.splash_exit_btn = btn_exit
+        self.splash_info_btn = btn_info
+
+    def _show_modal(self, kind):
+        self._hide_modals()
+        self._ui_modal_open = True
+        
+        # 隐藏开始界面的无关元素
+        if getattr(self, 'start_screen_root', None) and self.start_screen_root.enabled:
+            if getattr(self, 'splash_title', None): self.splash_title.enabled = False
+            for btn_attr in ('splash_btn', 'splash_info_btn', 'splash_exit_btn'):
+                btn = getattr(self, btn_attr, None)
+                if btn:
+                    btn.enabled = False
+                    lbl = getattr(btn, '_label_entity', None)
+                    if lbl: lbl.enabled = False
+
+        root = Entity(parent=camera.ui, z=-0.10)
+        overlay = Button(parent=root, text='', scale=(2.2, 2.2), color=color.rgba(0, 0, 0, 0.55), radius=0)
+        overlay.shader = unlit_shader
+        overlay.collider = 'box'
+        overlay.z = 0.02
+
+        panel = Button(parent=root, text='', scale=(0.95, 0.70), color=color.rgba(self.ui_bg.r, self.ui_bg.g, self.ui_bg.b, 0.80), radius=0.18)
+        panel.shader = unlit_shader
+        panel.collider = None
+        panel.z = 0.01
+
+        if kind == 'info':
+            font_kw = {'font': self._cjk_font} if getattr(self, '_cjk_font', None) else {}
+            title = Text("Game Info", parent=root, origin=(0, 0), y=0.31, scale=2.5, color=color.rgba(0.2, 0.2, 0.2, 1))
+            
+            # 为了实现不同的对齐方式，将文本拆分为标题（居中）和正文（左对齐）
+            bg_title = Text("Game Background", parent=root, origin=(0, 0), y=0.23, scale=1.1, color=self.ui_text)
+            bg_body = Text(
+                "The parking lot is heavily congested.\n"
+                "The red car urgently needs to exit,\n"
+                "and you must direct the traffic to clear its path.\n",
+                parent=root, origin=(-0.5, 0), x=-0.32, y=0.11, scale=1.1, color=self.ui_text
+            )
+            
+            rule_title = Text("Game Rules", parent=root, origin=(0, 0), y=0.02, scale=1.1, color=self.ui_text)
+            rule_body = Text(
+                "1. Played on a 6x6 grid. Cars can only move straight\n"
+                "   along their direction; no turning or jumping.\n"
+                "2. Move the blocking vehicles to let the red car reach\n"
+                "   the exit in the fewest moves possible.\n"
+                "3. The difficulty increases gradually, testing your\n"
+                "   logic and route planning skills.\n",
+                parent=root, origin=(-0.5, 0), x=-0.32, y=-0.10, scale=1.1, color=self.ui_text
+            )
+            
+            title.z = -0.02
+            bg_title.z = -0.02
+            bg_body.z = -0.02
+            rule_title.z = -0.02
+            rule_body.z = -0.02
+
+            btn_close = Button(parent=root, text='Close', scale=(0.30, 0.08), y=-0.28, radius=0.95)
+            self._style_capsule_button(btn_close, color.rgba(0.22, 0.30, 0.40, 0.68), "Close", label_scale=1.40)
+            btn_close.on_click = self._sfx_callback(self._hide_modals)
+            overlay.on_click = self._sfx_callback(self._hide_modals)
+            self._info_modal_root = root
+
+        elif kind == 'levels':
+            title = Text("Select Level", parent=root, origin=(0, 0), y=0.25, scale=3.6, color=self.ui_text)
+            title.z = -0.02
+
+            count = len(getattr(self, 'level_data', []) or [])
+            cols = 2 if count > 4 else 2
+            rows = max(1, math.ceil(max(1, count) / cols))
+            start_y = 0.11
+            gap_y = 0.14
+            gap_x = 0.34
+            idx = 0
+            for r in range(rows):
+                for c in range(cols):
+                    if idx >= count:
+                        break
+                    x = (-gap_x / 2) if cols == 2 and c == 0 else (gap_x / 2 if cols == 2 else 0)
+                    y = start_y - r * gap_y
+                    b = Button(parent=root, text=f'Level {idx+1}', scale=(0.30, 0.095), x=x, y=y, radius=0.95)
+                    unlocked = self._is_level_unlocked(idx)
+                    if unlocked:
+                        self._style_capsule_button(b, color.rgba(0.20, 0.46, 0.30, 0.68), f'Level {idx+1}', label_scale=1.24)
+                        target_idx = idx
+                        b.on_click = self._sfx_callback(lambda ti=target_idx: self._start_level_from_select(ti))
+                    else:
+                        self._style_capsule_button(b, color.rgba(0.28, 0.30, 0.34, 0.40), f'Level {idx+1}\nLocked', label_scale=0.90)
+                        b.collider = None
+                        b.disabled = True
+                    idx += 1
+
+            btn_back = Button(parent=root, text='Back', scale=(0.26, 0.075), x=-0.18, y=-0.25, radius=0.95)
+            self._style_capsule_button(btn_back, color.rgba(0.22, 0.30, 0.40, 0.65), "Back", label_scale=1.40)
+            btn_back.on_click = self._sfx_callback(self._back_to_start_screen)
+
+            btn_close = Button(parent=root, text='Close', scale=(0.26, 0.075), x=0.18, y=-0.25, radius=0.95)
+            self._style_capsule_button(btn_close, color.rgba(0.30, 0.22, 0.22, 0.60), "Close", label_scale=1.40)
+            btn_close.on_click = self._sfx_callback(self._hide_modals)
+            overlay.on_click = self._sfx_callback(self._hide_modals)
+
+            self._level_select_root = root
+
+        self._ui_modal_root = root
+
+    def _hide_modals(self):
+        for attr in ('_ui_modal_root', '_info_modal_root', '_level_select_root'):
+            root = getattr(self, attr, None)
+            if root is not None:
+                try:
+                    for child in list(getattr(root, 'children', []) or []):
+                        if child is not None:
+                            lbl = getattr(child, '_label_entity', None)
+                            if lbl is not None:
+                                destroy(lbl)
+                except Exception:
+                    pass
+                destroy(root)
+            setattr(self, attr, None)
+        self._ui_modal_open = False
+        
+        # 恢复开始界面的无关元素
+        if getattr(self, 'start_screen_root', None) and self.start_screen_root.enabled:
+            if getattr(self, 'splash_title', None): self.splash_title.enabled = True
+            for btn_attr in ('splash_btn', 'splash_info_btn', 'splash_exit_btn'):
+                btn = getattr(self, btn_attr, None)
+                if btn:
+                    btn.enabled = True
+                    lbl = getattr(btn, '_label_entity', None)
+                    if lbl: lbl.enabled = True
+
+    def _show_info_modal(self):
+        self._show_modal('info')
+
+    def _show_level_select(self):
+        self._show_modal('levels')
+
+    def _start_level_from_select(self, idx):
+        self._start_bgm('music/bgm2.mp3')
+        self._hide_modals()
+        self.splash_shown = False
+        self._remove_splash()
+        self._set_game_visibility(True)
+        try:
+            self.load_level(int(idx))
+        except Exception:
+            self.load_level(0)
+        invoke(self._tutorial_maybe_start, delay=0.05)
+
+    def _back_to_start_screen(self):
+        self._start_bgm('music/bgm1.mp3')
+        self._hide_modals()
+        self.splash_shown = True
+        self._set_game_visibility(False)
+        self._build_start_screen()
 
     def _dismiss_splash(self):
-        # 如果已经隐藏，避免重复执行
         if not getattr(self, 'splash_shown', True):
             return
         self.splash_shown = False
+        self._set_game_visibility(True)
 
-        # 所有元素一起淡出
-        self.splash_title.animate('color', color.clear, duration=0.4)
-        self.splash_btn.animate('color', color.clear, duration=0.4)
-        if self.splash_btn.text_entity:
-            self.splash_btn.text_entity.animate('color', color.clear, duration=0.4)
-
-        self.splash_overlay.animate_color(color.clear, duration=0.5, curve=curve.out_quad)
-
-        # 动画结束后销毁
-        invoke(self._remove_splash, delay=0.55)
+        for entity in (self.splash_overlay, getattr(self, '_splash_shade', None), self.splash_title, self.splash_btn, self.splash_exit_btn):
+            if entity is not None:
+                try:
+                    entity.animate_color(color.clear, duration=0.25, curve=curve.out_quad)
+                except Exception:
+                    pass
+        for button in (self.splash_btn, self.splash_exit_btn):
+            label = getattr(button, '_label_entity', None) if button is not None else None
+            if label is not None:
+                try:
+                    label.animate('color', color.clear, duration=0.25)
+                except Exception:
+                    pass
+        invoke(self._remove_splash, delay=0.28)
+        invoke(self._show_level_select, delay=0.05)
 
     def _remove_splash(self):
-        destroy(self.splash_overlay)
-        destroy(self.splash_title)
-        destroy(self.splash_btn)
-        # 可选：清除引用
+        for button in (getattr(self, 'splash_btn', None), getattr(self, 'splash_exit_btn', None), getattr(self, 'splash_info_btn', None)):
+            label = getattr(button, '_label_entity', None) if button is not None else None
+            if label is not None:
+                destroy(label)
+        root = getattr(self, 'start_screen_root', None)
+        if root is not None:
+            destroy(root)
         self.splash_overlay = None
+        self._splash_shade = None
         self.splash_title = None
         self.splash_btn = None
+        self.splash_exit_btn = None
+        self.splash_info_btn = None
+        self.start_screen_root = None
 
     def _load_save(self):
         try:
@@ -720,6 +1081,8 @@ class RushHourUrsina:
             return model
 
     def _input(self, key):
+        if self._is_game_frozen():
+            return
         if self._move_animating:
             return
         if key in ('v', 'V'):
@@ -898,7 +1261,7 @@ class RushHourUrsina:
             b = Button(text=text, parent=self.bottom_ui, scale=(0.115, 0.045), position=(x, y), radius=0.95)
             b.scale = scale_xy
             style_btn(b, tint)
-            b.on_click = on_click
+            b.on_click = self._sfx_callback(on_click)
             self._set_button_label(b, text, scale=label_scale)
             self.buttons.append(b)
             return b
@@ -1039,9 +1402,12 @@ class RushHourUrsina:
         self.vehicle_entities = []
         self.vehicle_ent_by_idx = {}
 
+        light_wood = color.rgba(0.74, 0.58, 0.40, 1)
+        dark_wood = color.rgba(0.46, 0.30, 0.18, 1)
+
         for r in range(6):
             for c in range(6):
-                base = color.rgba(0.82, 0.84, 0.86, 1) if (r + c) % 2 == 0 else color.rgba(0.78, 0.80, 0.82, 1)
+                base = light_wood if (r + c) % 2 == 0 else dark_wood
                 if r == 2 and c == 5:
                     base = color.rgba(0.80, 0.62, 0.62, 1)
                 tile = Entity(
@@ -1392,11 +1758,18 @@ class RushHourUrsina:
             self.status.text = f"{self._stars_text(stars)} Clear!"
             self.status.color = color.rgba(0.78, 0.72, 0.50, 1)
             self._show_toast("Great!", f"{self._stars_text(stars)}  Time {self._format_time(self.level_elapsed)}")
+            win_sound = None
+            try:
+                win_sound = Audio('music/win_sound.mp3', loop=False, autoplay=True)
+            except Exception:
+                pass
+            win_delay = getattr(win_sound, 'length', 0) or 3.0
+            transition_delay = max(0.9, win_delay + 0.2)
             if self.current_level_idx < len(self.level_data) - 1:
                 next_idx = self.current_level_idx + 1
-                invoke(self.load_level, next_idx, delay=0.9)
+                invoke(self.load_level, next_idx, delay=transition_delay)
             else:
-                invoke(self.show_end_screen, delay=0.9)
+                invoke(self.show_end_screen, delay=transition_delay)
 
     def _finish_move_animation(self, v_idx):
         self._move_animating = False
@@ -1473,15 +1846,15 @@ class RushHourUrsina:
         )
 
         Text(
-            "Congratulations!",
+            "congratulations！",
             parent=self._end_screen_ui,
             origin=(0, 0),
             y=0.10,
-            scale=1.8,
+            scale=1.9,
             color=color.rgba(0.46, 0.38, 0.22, 1)
         )
         Text(
-            "You have completed all levels.",
+            "你已完成全部关卡。",
             parent=self._end_screen_ui,
             origin=(0, 0),
             y=0.02,
@@ -1489,32 +1862,25 @@ class RushHourUrsina:
             color=self.ui_text
         )
 
-        btn_play_again = Button(
-            text="Play Again",
-            parent=self._end_screen_ui,
-            scale=(0.25, 0.06),
-            position=(0, -0.08),
-            radius=0.5,
-            color=color.rgba(self.btn_undo.r, self.btn_undo.g, self.btn_undo.b, 1),
-            text_color=color.rgba(0, 0, 0, 0.98)
-        )
-        btn_play_again.highlight_color = btn_play_again.color
-        btn_play_again.pressed_color = btn_play_again.color
-        if getattr(btn_play_again, 'text_entity', None) is not None:
-            btn_play_again.text_entity.enabled = True
-            btn_play_again.text_entity.z = -0.10
-        btn_play_again.z = 0.03
-        self._set_button_label(btn_play_again, "Play Again", scale=0.6)
+        btn_again = Button(parent=self._end_screen_ui, text='再玩一遍', scale=(0.20, 0.055), x=-0.22, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_again, color.rgba(0.20, 0.46, 0.30, 0.70), "再玩一遍", label_scale=0.62)
+        btn_again.z = 0.03
+        btn_again.on_click = self._sfx_callback(lambda: (self.hide_end_screen(), setattr(self, 'splash_shown', False), self._set_game_visibility(True), self.load_level(0)))
 
-        def on_play_again():
-            self.hide_end_screen()
-            self._tutorial_active = False
-            self.load_level(0)
+        btn_menu = Button(parent=self._end_screen_ui, text='返回主界面', scale=(0.22, 0.055), x=0.00, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_menu, color.rgba(0.22, 0.30, 0.40, 0.65), "返回主界面", label_scale=0.56)
+        btn_menu.z = 0.03
+        btn_menu.on_click = self._sfx_callback(lambda: (self.hide_end_screen(), self._back_to_start_screen()))
 
-        btn_play_again.on_click = on_play_again
+        btn_exit = Button(parent=self._end_screen_ui, text='离开', scale=(0.20, 0.055), x=0.22, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_exit, color.rgba(0.30, 0.22, 0.22, 0.60), "离开", label_scale=0.62)
+        btn_exit.z = 0.03
+        btn_exit.on_click = self._sfx_callback(application.quit)
 
     def _update(self):
         self._sync_camera_background()
+        if self._is_game_frozen():
+            return
         if self.is_ortho:
             camera.position = (0, self._ortho_height, 0)
             camera.rotation = (90, 0, 0)
@@ -1709,6 +2075,8 @@ class RushHourUrsina:
         return
 
     def _tutorial_maybe_start(self):
+        if self._is_game_frozen():
+            return
         if self.current_level_idx != 0:
             self._tutorial_stop(mark_seen=False)
             return
@@ -1797,7 +2165,7 @@ class RushHourUrsina:
             btn_skip.text_entity.enabled = True
             btn_skip.text_entity.z = -0.10
         btn_skip.z = -0.01
-        btn_skip.on_click = lambda: self._tutorial_stop(mark_seen=True)
+        btn_skip.on_click = self._sfx_callback(lambda: self._tutorial_stop(mark_seen=True))
         self._set_button_label(btn_skip, "Skip", scale=0.52)
 
         btn_next_text = "Next" if layout == 'steps' else "Start Tutorial"
@@ -1814,7 +2182,7 @@ class RushHourUrsina:
             btn_next.text_entity.enabled = True
             btn_next.text_entity.z = -0.10
         btn_next.z = -0.01
-        btn_next.on_click = (self._tutorial_next_clicked if layout == 'steps' else self._tutorial_start_clicked)
+        btn_next.on_click = self._sfx_callback(self._tutorial_next_clicked if layout == 'steps' else self._tutorial_start_clicked)
         self._set_button_label(btn_next, btn_next_text, scale=0.52)
 
         self._tutorial_panel_shadow = None
@@ -2147,15 +2515,15 @@ class RushHourUrsina:
         )
 
         Text(
-            "Congratulations!",
+            "congratulations！",
             parent=self._end_screen_ui,
             origin=(0, 0),
             y=0.10,
-            scale=1.8,
+            scale=1.9,
             color=color.rgba(0.46, 0.38, 0.22, 1)
         )
         Text(
-            "You have completed all levels.",
+            "你已完成全部关卡。",
             parent=self._end_screen_ui,
             origin=(0, 0),
             y=0.02,
@@ -2163,29 +2531,20 @@ class RushHourUrsina:
             color=self.ui_text
         )
 
-        btn_play_again = Button(
-            text="Play Again",
-            parent=self._end_screen_ui,
-            scale=(0.25, 0.06),
-            position=(0, -0.08),
-            radius=0.5,
-            color=color.rgba(self.btn_undo.r, self.btn_undo.g, self.btn_undo.b, 1),
-            text_color=color.rgba(0, 0, 0, 0.98)
-        )
-        btn_play_again.highlight_color = btn_play_again.color
-        btn_play_again.pressed_color = btn_play_again.color
-        if getattr(btn_play_again, 'text_entity', None) is not None:
-            btn_play_again.text_entity.enabled = True
-            btn_play_again.text_entity.z = -0.10
-        btn_play_again.z = 0.03
-        self._set_button_label(btn_play_again, "Play Again", scale=0.6)
+        btn_again = Button(parent=self._end_screen_ui, text='再玩一遍', scale=(0.20, 0.055), x=-0.22, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_again, color.rgba(0.20, 0.46, 0.30, 0.70), "再玩一遍", label_scale=0.62)
+        btn_again.z = 0.03
+        btn_again.on_click = self._sfx_callback(lambda: (self.hide_end_screen(), setattr(self, 'splash_shown', False), self._set_game_visibility(True), self.load_level(0)))
 
-        def on_play_again():
-            self.hide_end_screen()
-            self._tutorial_active = False
-            self.load_level(0)
+        btn_menu = Button(parent=self._end_screen_ui, text='返回主界面', scale=(0.22, 0.055), x=0.00, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_menu, color.rgba(0.22, 0.30, 0.40, 0.65), "返回主界面", label_scale=0.56)
+        btn_menu.z = 0.03
+        btn_menu.on_click = self._sfx_callback(lambda: (self.hide_end_screen(), self._back_to_start_screen()))
 
-        btn_play_again.on_click = on_play_again
+        btn_exit = Button(parent=self._end_screen_ui, text='离开', scale=(0.20, 0.055), x=0.22, y=-0.10, radius=0.95)
+        self._style_capsule_button(btn_exit, color.rgba(0.30, 0.22, 0.22, 0.60), "离开", label_scale=0.62)
+        btn_exit.z = 0.03
+        btn_exit.on_click = self._sfx_callback(application.quit)
 
     def hide_end_screen(self):
         for attr in ('_end_screen_bg', '_end_screen_ui'):

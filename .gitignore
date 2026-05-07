@@ -2,9 +2,9 @@
 .vscode/
 # use obj rather than gltf
 gltf/
-
+.claude/
 models_compressed/
-
+__pycache__/
 assets/
 obj/*.png
 
