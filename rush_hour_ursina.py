@@ -1000,7 +1000,7 @@ class RushHourUrsina:
 
     def _stars_text(self, count):
         c = max(1, min(3, int(count)))
-        return f"Stars: {'*' * c}{'-' * (3 - c)}"
+        return f"{'★' * c}{'☆' * (3 - c)}"
 
     def _update_hud(self):
         opt = self.optimal_moves
