@@ -20,11 +20,14 @@ except Exception:
 
 
 class Direction(Enum):
+    """Movement direction: HORIZONTAL (row-wise, step=1) or VERTICAL (column-wise, step=6)."""
     HORIZONTAL = "horizontal"
     VERTICAL = "vertical"
 
 
 class Vehicle:
+    """Domain model: stores vehicle id, name, color, 1D board position (0-35), length (2 or 3), direction, and target flag."""
+
     def __init__(self, id, name, color_hex, start_pos, length, direction, is_target=False):
         self.id = id
         self.name = name
@@ -35,6 +38,7 @@ class Vehicle:
         self.is_target = is_target
 
     def get_cells(self, pos=None):
+        """Return list of cell indices occupied by this vehicle at the given position (or current position if None)."""
         if pos is None:
             pos = self.position
         if self.direction == Direction.HORIZONTAL:
@@ -42,6 +46,7 @@ class Vehicle:
         return [pos + i * 6 for i in range(self.length)]
 
     def can_move_to(self, new_pos, occupied_cells_without_me):
+        """Check whether this vehicle can move to new_pos: stays in bounds, same row/column, and does not overlap other vehicles."""
         cells = self.get_cells(new_pos)
         for cell in cells:
             if cell < 0 or cell > 35:
@@ -61,21 +66,26 @@ class Vehicle:
         return True
 
     def clone(self):
+        """Deep-copy this vehicle (used by BFS to produce new board states)."""
         return Vehicle(self.id, self.name, self.color_hex, self.position, self.length, self.direction, self.is_target)
 
 
 class Board:
+    """Game board: holds a vehicle list and cell-occupancy dict; provides move generation and win detection."""
+
     def __init__(self, vehicles=None):
         self.vehicles = vehicles if vehicles else []
         self.update_occupied()
 
     def update_occupied(self):
+        """Rebuild the cell → vehicle_id occupancy map from current vehicle positions."""
         self.occupied = {}
         for v in self.vehicles:
             for cell in v.get_cells():
                 self.occupied[cell] = v.id
 
     def add_vehicle(self, vehicle):
+        """Add a vehicle to the board, raising ValueError on out-of-bounds or overlap."""
         cells = vehicle.get_cells()
         for cell in cells:
             if cell < 0 or cell > 35:
@@ -87,9 +97,11 @@ class Board:
         self.update_occupied()
 
     def get_state(self):
+        """Return an immutable snapshot of the board (used for BFS visited-set deduplication)."""
         return tuple(sorted((v.id, v.position) for v in self.vehicles))
 
     def check_win(self):
+        """Win condition: the target car's rightmost cell is at row 2, column 5 (the exit)."""
         for v in self.vehicles:
             if v.is_target:
                 cells = v.get_cells()
@@ -98,6 +110,7 @@ class Board:
         return False
 
     def get_possible_moves(self):
+        """Enumerate all legal moves from the current board state. Returns list of (vehicle_idx, new_position)."""
         moves = []
         for i, v in enumerate(self.vehicles):
             occupied_without_me = {c for c, vid in self.occupied.items() if vid != v.id}
@@ -110,12 +123,14 @@ class Board:
         return moves
 
     def apply_move(self, vehicle_idx, new_pos):
+        """Apply a move and return a new Board instance (does not mutate the original — used by BFS)."""
         new_vehicles = [v.clone() for v in self.vehicles]
         new_vehicles[vehicle_idx].position = new_pos
         return Board(new_vehicles)
 
 
 def solve_bfs(initial_board):
+    """BFS solver: return the shortest path [(v_idx, new_pos), ...] from initial board to win state, or None if unsolvable."""
     start_state = initial_board.get_state()
     queue = collections.deque([(initial_board, [])])
     visited = {start_state}
@@ -133,6 +148,7 @@ def solve_bfs(initial_board):
 
 
 def hex_to_ursina_color(hex_color: str):
+    """Convert a hex color string (#RRGGBB) to a Ursina color.rgba object."""
     h = hex_color.lstrip('#')
     r = int(h[0:2], 16) / 255.0
     g = int(h[2:4], 16) / 255.0
@@ -141,7 +157,10 @@ def hex_to_ursina_color(hex_color: str):
 
 
 class RushHourUrsina:
+    """Main game class: manages the Ursina window, 3D scene, UI, input, level lifecycle, and persistent save data."""
+
     def __init__(self):
+        """Initialize the game engine: create window, configure UI colors, set up 3D scene (lights/camera/background), load levels, and show the start screen."""
         self.app = Ursina(borderless=False)
 
         # Add project directories to Panda3D model path for font/asset loading
@@ -338,6 +357,7 @@ class RushHourUrsina:
         
 
     def _is_ui_entity(self, e):
+        """Recursively check whether an entity belongs to the camera.ui subtree (i.e. screen-space UI)."""
         if e is None:
             return False
         p = e
@@ -348,6 +368,7 @@ class RushHourUrsina:
         return False
 
     def _resolve_pick(self, e):
+        """Walk up the parent chain to find an entity with a vehicle_idx or cell attribute (resolves mouse picks)."""
         p = e
         while p is not None:
             if hasattr(p, 'vehicle_idx') or hasattr(p, 'cell'):
@@ -356,11 +377,13 @@ class RushHourUrsina:
         return None
 
     def _set_camera_base(self):
+        """Reset camera position to the default 3D perspective view."""
         self._camera_base_pos = Vec3(0, self.camera_height, -self.camera_dist)
         camera.position = self._camera_base_pos
         camera.look_at(Vec3(0, 0, 0))
 
     def _beep(self, kind):
+        """Play a system beep sound effect. 'select' = high short, 'move' = mid, 'bump' = low."""
         if winsound is None:
             return
         try:
@@ -374,12 +397,14 @@ class RushHourUrsina:
             pass
 
     def _play_button_sound(self):
+        """Play the UI button click sound effect."""
         try:
             Audio('music/button_sound.mp3', loop=False, autoplay=True)
         except Exception:
             pass
 
     def _sfx_callback(self, callback):
+        """Wrap a callback so the button sound plays before the original callback executes."""
         def handler(*args, **kwargs):
             self._play_button_sound()
             if callable(callback):
@@ -387,6 +412,7 @@ class RushHourUrsina:
         return handler
 
     def _stop_bgm(self):
+        """Stop the currently playing background music."""
         bgm = getattr(self, '_bgm', None)
         if bgm is not None:
             try:
@@ -396,6 +422,7 @@ class RushHourUrsina:
             self._bgm = None
 
     def _start_bgm(self, path):
+        """Switch background music: stop the current one, then loop a new audio file."""
         self._stop_bgm()
         try:
             self._bgm = Audio(path, loop=True, autoplay=True)
@@ -403,6 +430,7 @@ class RushHourUrsina:
             self._bgm = None
 
     def _find_cjk_font(self):
+        """Scan the system for a usable CJK font file (.ttf/.otf) and return its path, or None."""
         base_dir = os.path.dirname(os.path.abspath(__file__))
         local_candidates = [
             os.path.join(base_dir, 'sans', 'SmileySans-Oblique.otf'),
@@ -432,6 +460,7 @@ class RushHourUrsina:
         return None
 
     def _to_panda_path(self, path):
+        """Convert an OS-native path to Panda3D's internal path format."""
         try:
             from panda3d.core import Filename
             return str(Filename.fromOsSpecific(path))
@@ -439,10 +468,10 @@ class RushHourUrsina:
             return path.replace('\\', '/')
 
     def _ensure_cjk_font(self):
+        """Ensure a CJK font is available: prefer the local sans/ directory font, otherwise copy from the system fonts directory into Ursina's font folder."""
         src = self._find_cjk_font()
         if not src:
             return None
-        # If the font is in our local project, convert to Panda3D path and return
         base_dir = os.path.dirname(os.path.abspath(__file__))
         if os.path.abspath(src).startswith(os.path.abspath(base_dir)):
             return self._to_panda_path(os.path.abspath(src))
@@ -465,6 +494,7 @@ class RushHourUrsina:
             return None
 
     def _setup_camera_background(self):
+        """Set up the equirectangular sky dome using background.png as the camera background."""
         # `background.png` is a 2:1 equirectangular panorama, so `Sky` gives the best result.
         self.camera_background = Sky(texture='background.png')
         self.camera_background.collider = None
@@ -472,6 +502,7 @@ class RushHourUrsina:
         self.camera_background.texture_offset = Vec2(0, 1)
 
     def _sync_camera_background(self):
+        """Sync the sky dome texture offset so the panorama rotates with camera rotation_y."""
         bg = getattr(self, 'camera_background', None)
         if bg is None:
             return
@@ -480,9 +511,11 @@ class RushHourUrsina:
         bg.texture_offset = Vec2((rotation_y / 360.0) % 1.0, 1.0)
 
     def _is_game_frozen(self):
+        """Return True if game input should be blocked (splash showing or modal open)."""
         return bool(getattr(self, 'splash_shown', False) or getattr(self, '_ui_modal_open', False))
 
     def _is_level_unlocked(self, idx):
+        """Check whether a level is unlocked based on whether the previous level was cleared."""
         try:
             idx = int(idx)
         except Exception:
@@ -494,6 +527,7 @@ class RushHourUrsina:
         return bool(prev.get('cleared'))
 
     def _set_game_visibility(self, visible):
+        """Show or hide the 3D game scene and HUD panels."""
         visible = bool(visible)
         self._game_visible = visible
 
@@ -516,6 +550,7 @@ class RushHourUrsina:
             self.is_rotating = False
 
     def _ensure_blurred_start_background(self):
+        """Generate a blurred version of start.jpg (cached as start_blur_r26.png) for the start screen backdrop."""
         base_dir = os.path.dirname(os.path.abspath(__file__))
         src = os.path.join(base_dir, 'start.jpg')
         blur_radius = 2.6
@@ -536,6 +571,7 @@ class RushHourUrsina:
             self._start_bg_texture = 'start.jpg'
 
     def _style_capsule_button(self, button, bg_color, label_text, label_scale=0.72):
+        """Style a button as a capsule with color, label, and radius."""
         c = color.rgba(bg_color.r, bg_color.g, bg_color.b, bg_color.a)
         button.radius = 0.95
         button.color = c
@@ -549,6 +585,7 @@ class RushHourUrsina:
         return button
 
     def _build_start_screen(self):
+        """Build the start screen UI with title, start/info/exit buttons."""
         self._start_bgm('music/bgm1.mp3')
         self._remove_splash()
         self._ensure_blurred_start_background()
@@ -606,10 +643,11 @@ class RushHourUrsina:
         self.splash_info_btn = btn_info
 
     def _show_modal(self, kind):
+        """Show a modal overlay (info or level select) on top of the current screen."""
         self._hide_modals()
         self._ui_modal_open = True
         
-        # 隐藏开始界面的无关元素
+        # Hide start-screen elements that are irrelevant when a modal is open
         if getattr(self, 'start_screen_root', None) and self.start_screen_root.enabled:
             if getattr(self, 'splash_title', None): self.splash_title.enabled = False
             for btn_attr in ('splash_btn', 'splash_info_btn', 'splash_exit_btn'):
@@ -634,7 +672,7 @@ class RushHourUrsina:
             font_kw = {'font': self._cjk_font} if getattr(self, '_cjk_font', None) else {}
             title = Text("Game Info", parent=root, origin=(0, 0), y=0.31, scale=2.5, color=color.rgba(0.2, 0.2, 0.2, 1))
             
-            # 为了实现不同的对齐方式，将文本拆分为标题（居中）和正文（左对齐）
+            # Split text into centered title and left-aligned body for distinct alignment
             bg_title = Text("Game Background", parent=root, origin=(0, 0), y=0.23, scale=1.1, color=self.ui_text)
             bg_body = Text(
                 "The parking lot is heavily congested.\n"
@@ -705,6 +743,7 @@ class RushHourUrsina:
         self._ui_modal_root = root
 
     def _hide_modals(self):
+        """Destroy all active modal overlays and restore hidden start-screen elements."""
         for attr in ('_ui_modal_root', '_info_modal_root', '_level_select_root'):
             root = getattr(self, attr, None)
             if root is not None:
@@ -720,7 +759,7 @@ class RushHourUrsina:
             setattr(self, attr, None)
         self._ui_modal_open = False
         
-        # 恢复开始界面的无关元素
+        # Restore start-screen elements that were hidden for the modal
         if getattr(self, 'start_screen_root', None) and self.start_screen_root.enabled:
             if getattr(self, 'splash_title', None): self.splash_title.enabled = True
             for btn_attr in ('splash_btn', 'splash_info_btn', 'splash_exit_btn'):
@@ -731,12 +770,15 @@ class RushHourUrsina:
                     if lbl: lbl.enabled = True
 
     def _show_info_modal(self):
+        """Convenience: show the game info modal."""
         self._show_modal('info')
 
     def _show_level_select(self):
+        """Convenience: show the level select modal."""
         self._show_modal('levels')
 
     def _start_level_from_select(self, idx):
+        """Hide modals, dismiss splash, show the game, and load the chosen level."""
         self._start_bgm('music/bgm2.mp3')
         self._hide_modals()
         self.splash_shown = False
@@ -749,6 +791,7 @@ class RushHourUrsina:
         invoke(self._tutorial_maybe_start, delay=0.05)
 
     def _back_to_start_screen(self):
+        """Return to the start screen from gameplay."""
         self._start_bgm('music/bgm1.mp3')
         self._hide_modals()
         self.splash_shown = True
@@ -756,6 +799,7 @@ class RushHourUrsina:
         self._build_start_screen()
 
     def _dismiss_splash(self):
+        """Animate out the splash overlay and show the level select modal."""
         if not getattr(self, 'splash_shown', True):
             return
         self.splash_shown = False
@@ -778,6 +822,7 @@ class RushHourUrsina:
         invoke(self._show_level_select, delay=0.05)
 
     def _remove_splash(self):
+        """Destroy all splash screen entities."""
         for button in (getattr(self, 'splash_btn', None), getattr(self, 'splash_exit_btn', None), getattr(self, 'splash_info_btn', None)):
             label = getattr(button, '_label_entity', None) if button is not None else None
             if label is not None:
@@ -794,6 +839,7 @@ class RushHourUrsina:
         self.start_screen_root = None
 
     def _load_save(self):
+        """Load persistent save data from rush_hour_save.json."""
         try:
             if os.path.exists(self._save_path):
                 with open(self._save_path, 'r', encoding='utf-8') as f:
@@ -806,6 +852,7 @@ class RushHourUrsina:
         return {'levels': {}}
 
     def _save(self):
+        """Write persistent save data to rush_hour_save.json."""
         try:
             with open(self._save_path, 'w', encoding='utf-8') as f:
                 json.dump(self._save_data, f, ensure_ascii=False, indent=2)
@@ -813,6 +860,7 @@ class RushHourUrsina:
             pass
 
     def _glass_panel(self, scale, position):
+        """Create a frosted-glass UI panel with a thin border."""
         radius = 0.18
 
         border = Button(parent=camera.ui, text='', scale=(scale[0] + 0.003, scale[1] + 0.003), position=position, color=self.ui_border, radius=radius)
@@ -829,6 +877,7 @@ class RushHourUrsina:
         return panel
 
     def _set_button_label(self, button, text, scale=0.50, z=-0.12):
+        """Set or update a button's visible label text entity."""
         label = getattr(button, '_label_entity', None)
         if label is None:
             label = Text(
@@ -850,6 +899,7 @@ class RushHourUrsina:
         return label
 
     def _show_toast(self, title, subtitle=None, duration=2.2):
+        """Show a temporary toast notification at the top of the screen."""
         if self._toast_panel is not None:
             try:
                 destroy(self._toast_panel.get('bg'))
@@ -876,6 +926,7 @@ class RushHourUrsina:
         self._toast_panel = {'bg': bg, 'border': border, 'ui': ui}
 
     def _unlock_achievement(self, key, title, subtitle=None):
+        """Unlock an achievement, persist it, and show a toast."""
         ach = self._save_data.setdefault('achievements', {})
         if ach.get(key):
             return
@@ -885,6 +936,7 @@ class RushHourUrsina:
         self._beep('select')
 
     def toggle_view_mode(self):
+        """Toggle between 3D perspective and 2D orthographic top-down view."""
         self._tutorial_on_toggle_view()
         self.is_ortho = not self.is_ortho
         if self.is_ortho:
@@ -905,6 +957,7 @@ class RushHourUrsina:
             self._show_toast("3D View", "Perspective")
 
     def _apply_ortho_lens(self, force=False):
+        """Adjust the orthographic lens film size for the current aspect ratio and zoom."""
         if not self.is_ortho and not force:
             return
         try:
@@ -934,6 +987,7 @@ class RushHourUrsina:
                 pass
 
     def take_screenshot(self):
+        """Capture a screenshot with a watermark overlay."""
         base_dir = os.path.dirname(os.path.abspath(__file__))
         out_dir = os.path.join(base_dir, 'screenshots')
         os.makedirs(out_dir, exist_ok=True)
@@ -963,12 +1017,14 @@ class RushHourUrsina:
         invoke(_snap, delay=0.05)
 
     def _format_time(self, seconds):
+        """Format seconds as MM:SS.S display string."""
         seconds = max(0.0, float(seconds))
         m = int(seconds // 60)
         s = seconds - m * 60
         return f"{m:02d}:{s:04.1f}"
 
     def _get_optimal_moves(self, idx):
+        """Get the BFS optimal move count for a level (cached)."""
         if idx in self.optimal_moves_cache:
             return self.optimal_moves_cache[idx]
         try:
@@ -982,6 +1038,7 @@ class RushHourUrsina:
         return value
 
     def _stars_for_moves(self, moves, optimal, elapsed):
+        """Calculate star rating (1-3) based on moves vs optimal and elapsed time."""
         moves = int(moves)
         elapsed = float(elapsed)
         if optimal is None:
@@ -999,10 +1056,12 @@ class RushHourUrsina:
         return 1
 
     def _stars_text(self, count):
+        """Return a star-rating string using filled/empty star characters."""
         c = max(1, min(3, int(count)))
         return f"{'★' * c}{'☆' * (3 - c)}"
 
     def _update_hud(self):
+        """Refresh the level/moves/time/best display text."""
         opt = self.optimal_moves
         opt_s = str(opt) if opt is not None else "?"
         t = self._format_time(self.level_elapsed)
@@ -1020,6 +1079,7 @@ class RushHourUrsina:
         )
 
     def _trigger_shake(self, strength=0.22, duration=0.16):
+        """Trigger a camera shake effect with a cooldown."""
         now = pytime.perf_counter()
         if now < self._bump_cooldown_until:
             return
@@ -1029,12 +1089,14 @@ class RushHourUrsina:
         self._beep('bump')
 
     def _pulse_color(self, c, k):
+        """Brighten a color by multiplying its RGB channels by a factor."""
         r = max(0.0, min(1.0, c.r * k))
         g = max(0.0, min(1.0, c.g * k))
         b = max(0.0, min(1.0, c.b * k))
         return color.rgba(r, g, b, 1)
 
     def _load_vehicle_models(self):
+        """Load OBJ vehicle models from the obj/ directory."""
         base_dir = os.path.dirname(os.path.abspath(__file__))
         obj_dir = os.path.join(base_dir, 'obj')
         models = {2: None, 3: None}
@@ -1071,6 +1133,7 @@ class RushHourUrsina:
         return models
 
     def _init_vehicle_models(self):
+        """Initialize the vehicle model cache with measured bounds."""
         loaded = self._load_vehicle_models()
         for length, m in loaded.items():
             entry = self.vehicle_models[length]
@@ -1094,6 +1157,7 @@ class RushHourUrsina:
                 entry['source_min_y'] = 0.0
 
     def _clone_vehicle_mesh(self, model):
+        """Clone a vehicle model into a new Mesh for independent tinting."""
         if model is None:
             return None
         try:
@@ -1109,6 +1173,7 @@ class RushHourUrsina:
             return model
 #
     def _input(self, key):
+        """Handle keyboard and mouse input events."""
         if self._is_game_frozen():
             return
         if self._move_animating:
@@ -1221,6 +1286,7 @@ class RushHourUrsina:
         #
 
     def init_levels(self):
+        """Define and return the list of hardcoded 6x6 puzzle levels."""
         levels = []
 
         b1 = Board()
@@ -1268,6 +1334,7 @@ class RushHourUrsina:
         return levels
 
     def _build_ui_buttons(self):
+        """Build the bottom-panel action buttons (UNDO, RESET, HINT, etc.)."""
         self.buttons = []
         self.action_buttons = {}
         self.action_buttons_by_text = {}
@@ -1326,6 +1393,7 @@ class RushHourUrsina:
             y -= h + gap
 
     def reset_view(self):
+        """Reset camera to the default 3D angle and distance."""
         self.rotation_y = 45.0
         self.camera_dist = 15.0
         self._set_camera_base()
@@ -1333,6 +1401,7 @@ class RushHourUrsina:
         self._camera_3d_rot = Vec3(camera.rotation)
 
     def load_level(self, idx):
+        """Load a level by index: clone the board, rebuild the scene, and update HUD."""
         if getattr(self, 'hide_end_screen', None):
             self.hide_end_screen()
         self.current_level_idx = idx
@@ -1352,9 +1421,11 @@ class RushHourUrsina:
         self._tutorial_maybe_start()
 
     def reset_level(self):
+        """Reload the current level from its initial state."""
         self.load_level(self.current_level_idx)
 
     def undo_move(self):
+        """Revert the last move from the move history."""
         if not self.move_history:
             return
         v_idx, old_pos = self.move_history.pop()
@@ -1367,6 +1438,7 @@ class RushHourUrsina:
         self._update_hud()
 
     def show_hint(self):
+        """Compute and highlight the BFS-recommended next move."""
         self.status.text = "Calculating path..."
         self.status.color = self.btn_hint
         if not self.hint_used_this_level:
@@ -1390,6 +1462,7 @@ class RushHourUrsina:
             self._update_move_range_highlight()
 
     def start_validation(self):
+        """Begin a 360-degree geometry validation sweep."""
         if self.validation_active:
             return
         self.validation_active = True
@@ -1400,6 +1473,7 @@ class RushHourUrsina:
         self.status.color = color.rgba(0.95, 0.72, 0.15, 1)
 
     def calculate_geometry_error(self):
+        """Measure geometric deviation for the first vehicle on the board."""
         if not self.board.vehicles:
             return 0.0
         v = self.board.vehicles[0]
@@ -1415,11 +1489,13 @@ class RushHourUrsina:
         return abs(dist - expected)
 
     def _cell_to_world(self, r, c):
+        """Convert grid (row, col) to a world-space Vec3 position."""
         x = (c - 2.5)
         z = (2.5 - r)
         return Vec3(x, 0, z)
 
     def _rebuild_scene(self):
+        """Destroy and recreate all floor tiles and vehicle entities."""
         for e in self.floor_tiles:
             destroy(e)
         for e in self.vehicle_entities:
@@ -1462,6 +1538,7 @@ class RushHourUrsina:
         self._update_move_range_highlight()
 
     def _create_vehicle_entity(self, idx, v: Vehicle):
+        """Create a 3D entity for a vehicle with OBJ model, collider, and visual."""
         r0, c0 = v.position // 6, v.position % 6
         base = hex_to_ursina_color(v.color_hex)
 
@@ -1516,6 +1593,7 @@ class RushHourUrsina:
         return ent
 
     def _sync_vehicle_entities(self):
+        """Update vehicle entity positions, colors, and scales to match the board."""
         for i, ent in self.vehicle_ent_by_idx.items():
             v = self.board.vehicles[i]
             r0, c0 = v.position // 6, v.position % 6
@@ -1546,9 +1624,11 @@ class RushHourUrsina:
         self._update_hud()
 
     def _occupied_without_vehicle(self, vehicle_id):
+        """Return the set of occupied cells excluding a given vehicle."""
         return {c for c, vid in self.board.occupied.items() if vid != vehicle_id}
 
     def _valid_positions_for_vehicle(self, v: Vehicle):
+        """Return all reachable positions for a vehicle from its current spot."""
         occ = self._occupied_without_vehicle(v.id)
         positions = {v.position}
         step = 1 if v.direction == Direction.HORIZONTAL else 6
@@ -1560,6 +1640,7 @@ class RushHourUrsina:
         return positions
 
     def _best_pos_for_target_cell(self, v: Vehicle, target_cell: int):
+        """Find the best valid position for a vehicle that covers a target cell."""
         occ = self._occupied_without_vehicle(v.id)
         if v.direction == Direction.HORIZONTAL:
             tr = target_cell // 6
@@ -1593,16 +1674,19 @@ class RushHourUrsina:
         return None
 
     def _clear_highlights(self):
+        """Destroy all highlight overlay entities."""
         for e in self.highlight_overlays:
             destroy(e)
         self.highlight_overlays = []
 
     def _clear_preview_overlays(self):
+        """Destroy all preview overlay entities."""
         for e in self.preview_overlays:
             destroy(e)
         self.preview_overlays = []
 
     def _set_highlight_cells(self, cells, tint):
+        """Place colored highlight overlay tiles on the given cells."""
         self._clear_highlights()
         for cell in sorted(set(cells)):
             tile = self.tile_by_cell.get(cell)
@@ -1619,6 +1703,7 @@ class RushHourUrsina:
             self.highlight_overlays.append(overlay)
 
     def _set_preview_cells(self, cells, tint):
+        """Place colored preview overlay tiles on the given cells."""
         self._clear_preview_overlays()
         for cell in sorted(set(cells)):
             tile = self.tile_by_cell.get(cell)
@@ -1635,6 +1720,7 @@ class RushHourUrsina:
             self.preview_overlays.append(overlay)
 
     def _update_move_range_highlight(self):
+        """Update highlights to show the hint move range."""
         if self.selected_vehicle_idx is None or self.board is None:
             self._clear_highlights()
             return
@@ -1650,6 +1736,7 @@ class RushHourUrsina:
         self._clear_highlights()
 
     def _cell_from_world_point(self, world_point):
+        """Convert a world-space point to a grid cell index (0-35)."""
         local = self.pivot.world_to_local_point(world_point)
         c = int(round(local.x + 2.5))
         r = int(round(2.5 - local.z))
@@ -1658,6 +1745,7 @@ class RushHourUrsina:
         return r * 6 + c
 
     def _target_cell_from_mouse(self):
+        """Determine which grid cell the mouse is currently hovering over."""
         hovered = self._resolve_pick(mouse.hovered_entity)
         if hovered is not None and hasattr(hovered, 'cell'):
             return hovered.cell
@@ -1670,6 +1758,7 @@ class RushHourUrsina:
         return self._cell_from_world_point(wp)
 
     def _set_vehicle_preview(self, v_idx, pos):
+        """Temporarily reposition a vehicle entity for drag preview."""
         ent = self.vehicle_ent_by_idx.get(v_idx)
         if ent is None:
             return
@@ -1681,9 +1770,11 @@ class RushHourUrsina:
             ent.position = self._cell_to_world(r0 + (v.length - 1) / 2.0, c0)
 
     def _sync_pivot_rotation(self):
+        """Apply rotation_y to the scene pivot."""
         self.pivot.rotation_y = self.rotation_y
 
     def _try_click_cell(self, cell):
+        """Handle a click on a grid cell: select vehicle or attempt a move."""
         clicked_vehicle_idx = None
         for i, v in enumerate(self.board.vehicles):
             if cell in v.get_cells():
@@ -1711,6 +1802,7 @@ class RushHourUrsina:
         self._try_move_to_cell(self.selected_vehicle_idx, cell)
 
     def _try_move_to_cell(self, v_idx, target_cell):
+        """Try to move the selected vehicle to cover a target cell."""
         v = self.board.vehicles[v_idx]
         occ = {c for c, vid in self.board.occupied.items() if vid != v.id}
 
@@ -1752,6 +1844,7 @@ class RushHourUrsina:
                 self._execute_move(v_idx, best_pos)
 
     def _execute_move(self, v_idx, new_pos):
+        """Apply a move to the board, animate the entity, and check win condition."""
         ent = self.vehicle_ent_by_idx.get(v_idx)
         old_pos = self.board.vehicles[v_idx].position
         self.move_history.append((v_idx, self.board.vehicles[v_idx].position))
@@ -1801,10 +1894,12 @@ class RushHourUrsina:
                 invoke(self.show_end_screen, delay=transition_delay)
 
     def _finish_move_animation(self, v_idx):
+        """Mark the move animation as complete and re-sync entities."""
         self._move_animating = False
         self._sync_vehicle_entities()
 
     def _record_result(self, stars):
+        """Save level results (time, moves, stars) and check achievements."""
         levels = self._save_data.setdefault('levels', {})
         key = str(self.current_level_idx)
         entry = levels.setdefault(key, {})
@@ -1834,6 +1929,7 @@ class RushHourUrsina:
         self._save()
 
     def _check_meta_achievements(self):
+        """Award meta-achievements for clearing all levels."""
         cleared = self._save_data.get('stats', {}).get('levels_cleared', {})
         if len(cleared.keys()) >= len(self.level_data):
             all_no_hint = all(cleared.get(str(i), {}).get('cleared_without_hint') for i in range(len(self.level_data)))
@@ -1850,92 +1946,8 @@ class RushHourUrsina:
             if all_opt:
                 self._unlock_achievement('perfectionist', 'Perfectionist', 'Clear all levels in optimal moves')
 
-    def hide_end_screen(self):
-        for attr in ('_end_screen_bg', '_end_screen_shade', '_end_screen_ui'):
-            ent = getattr(self, attr, None)
-            if ent is not None:
-                destroy(ent)
-                setattr(self, attr, None)
-        if getattr(self, '_game_visible', False):
-            for attr in ('top_panel', 'bottom_panel', 'top_ui', 'bottom_ui'):
-                ent = getattr(self, attr, None)
-                if ent is not None:
-                    ent.enabled = True
-                    border = getattr(ent, '_border', None)
-                    if border is not None:
-                        border.enabled = True
-
-    def show_end_screen(self):
-        self.hide_end_screen()
-        self._ensure_blurred_start_background()
-        bg_texture = getattr(self, '_start_bg_texture', 'start.jpg')
-        self._end_screen_bg = Entity(
-            parent=camera.ui,
-            model='quad',
-            texture=bg_texture,
-            shader=unlit_shader,
-            scale=(2.1, 2.1),
-            color=color.white,
-            z=0.06
-        )
-        self._end_screen_shade = Entity(
-            parent=camera.ui,
-            model='quad',
-            shader=unlit_shader,
-            scale=(2.1, 2.1),
-            color=color.rgba(0, 0, 0, 0.38),
-            z=0.05
-        )
-        for attr in ('top_panel', 'bottom_panel', 'top_ui', 'bottom_ui'):
-            ent = getattr(self, attr, None)
-            if ent is not None:
-                ent.enabled = False
-                border = getattr(ent, '_border', None)
-                if border is not None:
-                    border.enabled = False
-
-        self._end_screen_ui = Entity(parent=camera.ui, z=0.04)
-
-        Button(
-            parent=self._end_screen_ui,
-            color=self.ui_bg,
-            scale=(0.6, 0.4),
-            radius=0.1
-        )
-
-        Text(
-            "congratulations！",
-            parent=self._end_screen_ui,
-            origin=(0, 0),
-            y=0.10,
-            scale=1.9,
-            color=color.rgba(0.88, 0.62, 0.12, 1)
-        )
-        Text(
-            "Finished all levels",
-            parent=self._end_screen_ui,
-            origin=(0, 0),
-            y=0.02,
-            scale=1.0,
-            color=self.ui_text
-        )
-
-        btn_again = Button(parent=self._end_screen_ui, text='Play Again', scale=(0.20, 0.055), x=-0.22, y=-0.10, radius=0.95)
-        self._style_capsule_button(btn_again, color.rgba(0.20, 0.46, 0.30, 0.70), "Play Again", label_scale=0.62)
-        btn_again.z = 0.03
-        btn_again.on_click = self._sfx_callback(lambda: (self.hide_end_screen(), setattr(self, 'splash_shown', False), self._set_game_visibility(True), self.load_level(0)))
-
-        btn_menu = Button(parent=self._end_screen_ui, text='Back to Menu', scale=(0.22, 0.055), x=0.00, y=-0.10, radius=0.95)
-        self._style_capsule_button(btn_menu, color.rgba(0.22, 0.30, 0.40, 0.65), "Back to Menu", label_scale=0.56)
-        btn_menu.z = 0.03
-        btn_menu.on_click = self._sfx_callback(lambda: (self.hide_end_screen(), self._back_to_start_screen()))
-
-        btn_exit = Button(parent=self._end_screen_ui, text='Exit', scale=(0.20, 0.055), x=0.22, y=-0.10, radius=0.95)
-        self._style_capsule_button(btn_exit, color.rgba(0.30, 0.22, 0.22, 0.60), "Exit", label_scale=0.62)
-        btn_exit.z = 0.03
-        btn_exit.on_click = self._sfx_callback(application.quit)
-
     def _update(self):
+        """Per-frame update: sync background, handle input state, animate selection pulse, update HUD."""
         self._sync_camera_background()
         if self._is_game_frozen():
             return
@@ -2127,12 +2139,15 @@ class RushHourUrsina:
         self.last_render_ms = (pytime.perf_counter() - start) * 1000.0
 
     def _tutorial_seen(self):
+        """Return whether the tutorial has been completed previously."""
         return False
 
     def _tutorial_mark_seen(self):
+        """Mark the tutorial as completed in save data."""
         return
 
     def _tutorial_maybe_start(self):
+        """Start the tutorial if on level 0, game not frozen, and not already seen."""
         if self._is_game_frozen():
             return
         if self.current_level_idx != 0:
@@ -2145,6 +2160,7 @@ class RushHourUrsina:
         self._tutorial_start()
 
     def _tutorial_start(self):
+        """Begin the interactive tutorial sequence."""
         self._tutorial_active = True
         self._tutorial_step = 0
         self._tutorial_step_done = False
@@ -2156,6 +2172,7 @@ class RushHourUrsina:
         self._tutorial_apply_step()
 
     def _tutorial_stop(self, mark_seen):
+        """End the tutorial and clean up all tutorial visuals."""
         if mark_seen:
             self._tutorial_mark_seen()
         self._tutorial_active = False
@@ -2167,6 +2184,7 @@ class RushHourUrsina:
         self._tutorial_destroy_ui()
 
     def _tutorial_find_target_vehicle_idx(self):
+        """Find the index of the target (red) vehicle on the current board."""
         if self.board is None:
             return None
         for i, v in enumerate(self.board.vehicles):
@@ -2175,6 +2193,7 @@ class RushHourUrsina:
         return 0 if self.board.vehicles else None
 
     def _tutorial_build_ui(self, layout='intro'):
+        """Build the tutorial panel UI for the current layout (intro/steps)."""
         self._tutorial_destroy_ui()
         self._tutorial_layout = layout
         scale = (0.36, 0.31)
@@ -2261,7 +2280,8 @@ class RushHourUrsina:
             self._tutorial_flash_bg = flash_bg
 
     def _tutorial_destroy_ui(self):
-        for e in (getattr(self, '_tutorial_panel', None), 
+        """Destroy all tutorial UI elements."""
+        for e in (getattr(self, '_tutorial_panel', None),
                   getattr(self, '_tutorial_panel_border', None), 
                   getattr(self, '_tutorial_panel_shadow', None),
                   getattr(self, '_tutorial_flash_bg', None)):
@@ -2279,6 +2299,7 @@ class RushHourUrsina:
         self._tutorial_btn_skip = None
 
     def _tutorial_start_clicked(self):
+        """Handle the Start Tutorial button: advance from intro to step 1."""
         if not self._tutorial_active:
             return
         if self._tutorial_step != 0:
@@ -2295,6 +2316,7 @@ class RushHourUrsina:
         self._tutorial_apply_step()
 
     def _tutorial_next_clicked(self):
+        """Advance to the next tutorial step, or finish if on the last step."""
         if not self._tutorial_active:
             return
         requires_action = self._tutorial_step in (1, 2, 3)
@@ -2311,6 +2333,7 @@ class RushHourUrsina:
         self._tutorial_apply_step()
 
     def _tutorial_apply_step(self):
+        """Set up tutorial visuals and text for the current step."""
         if not self._tutorial_active:
             return
         self._tutorial_clear_ui_highlights()
@@ -2387,6 +2410,7 @@ class RushHourUrsina:
         self._tutorial_stop(mark_seen=True)
 
     def _tutorial_path_cells(self, v: Vehicle, start_pos: int, end_pos: int):
+        """Return all cells a vehicle passes through when moving from start_pos to end_pos."""
         if start_pos == end_pos:
             return list(v.get_cells(start_pos))
         step = 1 if v.direction == Direction.HORIZONTAL else 6
@@ -2403,6 +2427,7 @@ class RushHourUrsina:
         return sorted(cells)
 
     def _tutorial_clear_grid_highlights(self):
+        """Destroy all tutorial grid highlight overlays."""
         for e in self._tutorial_road_overlays:
             destroy(e)
         for e in self._tutorial_dest_overlays:
@@ -2411,6 +2436,7 @@ class RushHourUrsina:
         self._tutorial_dest_overlays = []
 
     def _tutorial_set_road_highlight(self, cells, tint):
+        """Highlight cells along the tutorial movement path."""
         for cell in sorted(set(cells)):
             tile = self.tile_by_cell.get(cell)
             if tile is None:
@@ -2427,6 +2453,7 @@ class RushHourUrsina:
             self._tutorial_road_overlays.append(overlay)
 
     def _tutorial_set_dest_highlight(self, cells, tint):
+        """Highlight cells at the tutorial destination position."""
         for cell in sorted(set(cells)):
             tile = self.tile_by_cell.get(cell)
             if tile is None:
@@ -2443,12 +2470,14 @@ class RushHourUrsina:
             self._tutorial_dest_overlays.append(overlay)
 
     def _tutorial_set_text(self, title, body):
+        """Update the tutorial panel title and body text."""
         if self._tutorial_title is not None:
             self._tutorial_title.text = title
         if self._tutorial_body is not None:
             self._tutorial_body.text = body
 
     def _tutorial_add_ui_highlight(self, target_btn):
+        """Add a glowing highlight behind a UI button."""
         try:
             hl = Entity(parent=target_btn, model='quad', scale=(1.14, 1.65), color=color.rgba(1, 0.88, 0.25, 0.22), shader=unlit_shader)
             hl.z = -0.20
@@ -2458,11 +2487,13 @@ class RushHourUrsina:
         self._tutorial_ui_highlights.append(hl)
 
     def _tutorial_clear_ui_highlights(self):
+        """Destroy all tutorial UI highlight overlays."""
         for e in self._tutorial_ui_highlights:
             destroy(e)
         self._tutorial_ui_highlights = []
 
     def _tutorial_set_vehicle_highlight(self, enabled):
+        """Add or remove a glowing highlight around the target tutorial vehicle."""
         if not enabled:
             self._tutorial_clear_vehicle_highlight()
             return
@@ -2483,11 +2514,13 @@ class RushHourUrsina:
         self._tutorial_vehicle_highlight = hl
 
     def _tutorial_clear_vehicle_highlight(self):
+        """Destroy the tutorial vehicle highlight entity."""
         if self._tutorial_vehicle_highlight is not None:
             destroy(self._tutorial_vehicle_highlight)
         self._tutorial_vehicle_highlight = None
 
     def _tutorial_on_move(self, v_idx, old_pos, new_pos):
+        """Mark step 1 done when the player moves the target vehicle correctly."""
         if not self._tutorial_active:
             return
         if self._tutorial_step == 1 and not self._tutorial_step_done:
@@ -2498,6 +2531,7 @@ class RushHourUrsina:
                     self._show_toast("Nice!", "Click Next to continue")
 
     def _tutorial_on_zoom(self):
+        """Mark step 3 done when the player zooms."""
         if not self._tutorial_active:
             return
         if self._tutorial_step == 3 and not self._tutorial_step_done:
@@ -2505,6 +2539,7 @@ class RushHourUrsina:
             self._show_toast("Great!", "Click Next to continue")
 
     def _tutorial_on_toggle_view(self):
+        """Mark step 4 done when the player toggles view mode."""
         if not self._tutorial_active:
             return
         if self._tutorial_step == 4 and not self._tutorial_step_done:
@@ -2512,6 +2547,7 @@ class RushHourUrsina:
             self._show_toast("Great!", "Click Finish to end the tutorial")
 
     def _tutorial_update(self):
+        """Per-frame tutorial updates: check step completion, animate highlights."""
         if not self._tutorial_active:
             return
         if self.current_level_idx != 0:
@@ -2543,6 +2579,7 @@ class RushHourUrsina:
             self._tutorial_clear_vehicle_highlight()
 
     def _count_rotation(self, delta_degrees):
+        """Track total rotation degrees for the Explorer achievement."""
         stats = self._save_data.setdefault('stats', {})
         units = int(stats.get('rotation_units', 0))
         acc = float(units) * 10.0
@@ -2556,6 +2593,8 @@ class RushHourUrsina:
                 self._unlock_achievement('explorer', 'Explorer', 'Rotate the view 100 times')
 
     def show_end_screen(self):
+        """Show the end screen with congratulations, play again, menu, and exit buttons."""
+        self._ui_modal_open = True
         self.hide_end_screen()
         self._ensure_blurred_start_background()
         bg_texture = getattr(self, '_start_bg_texture', 'start.jpg')
@@ -2626,6 +2665,8 @@ class RushHourUrsina:
         btn_exit.on_click = self._sfx_callback(application.quit)
 
     def hide_end_screen(self):
+        """Destroy the end screen overlay and restore game UI panels."""
+        self._ui_modal_open = False
         for attr in ('_end_screen_bg', '_end_screen_shade', '_end_screen_ui'):
             ent = getattr(self, attr, None)
             if ent is not None:
@@ -2641,6 +2682,7 @@ class RushHourUrsina:
                         border.enabled = True
 
     def run(self):
+        """Start the Ursina application main loop."""
         self.app.run()
 
 
